@@ -1,0 +1,24 @@
+[
+  {"ts_code": "600519.SH", "name": "贵州茅台", "aliases": ["茅台", "茅台酒"]},
+  {"ts_code": "300750.SZ", "name": "宁德时代", "aliases": ["宁德", "宁王"]},
+  {"ts_code": "600036.SH", "name": "招商银行", "aliases": ["招行"]},
+  {"ts_code": "000001.SZ", "name": "平安银行", "aliases": ["平安银行A"]},
+  {"ts_code": "000858.SZ", "name": "五粮液", "aliases": []},
+  {"ts_code": "601318.SH", "name": "中国平安", "aliases": ["平安"]},
+  {"ts_code": "601012.SH", "name": "隆基绿能", "aliases": ["隆基股份", "隆基"]},
+  {"ts_code": "600030.SH", "name": "中信证券", "aliases": ["中信"]},
+  {"ts_code": "601398.SH", "name": "工商银行", "aliases": ["工行", "中国工商银行"]},
+  {"ts_code": "601888.SH", "name": "中国中免", "aliases": ["中免"]},
+  {"ts_code": "603288.SH", "name": "海天味业", "aliases": ["海天"]},
+  {"ts_code": "300014.SZ", "name": "亿纬锂能", "aliases": ["亿纬"]},
+  {"ts_code": "002594.SZ", "name": "比亚迪", "aliases": ["BYD"]},
+  {"ts_code": "601633.SH", "name": "长城汽车", "aliases": ["长城"]},
+  {"ts_code": "600887.SH", "name": "伊利股份", "aliases": ["伊利"]},
+  {"ts_code": "600900.SH", "name": "长江电力", "aliases": []},
+  {"ts_code": "601668.SH", "name": "中国建筑", "aliases": ["中建"]},
+  {"ts_code": "600104.SH", "name": "上汽集团", "aliases": ["上汽"]},
+  {"ts_code": "600438.SH", "name": "通威股份", "aliases": ["通威"]},
+  {"ts_code": "601899.SH", "name": "紫金矿业", "aliases": ["紫金"]}
+]
+
+

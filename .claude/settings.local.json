@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(pkill:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(cd:*)",
+      "Bash(npm install)",
+      "Bash(npx vite:*)",
+      "Bash(nslookup:*)",
+      "Bash(grep:*)",
+      "Bash(pip install:*)",
+      "Bash(cat:*)",
+      "Bash(cp:*)",
+      "Bash(open http://localhost:5173)",
+      "Bash(touch:*)",
+      "Bash(npm run build:*)",
+      "Bash(cd:*)",
+      "Bash(open http://localhost:5174)",
+      "Bash(kill:*)",
+      "Bash(npm install:*)",
+      "Bash(sudo pfctl:*)",
+      "Bash(sudo:*)",
+      "Bash(node:*)",
+      "Bash(code:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "additionalDirectories": [
+      "/Users/chenfei/Library"
+    ]
+  }
+}
