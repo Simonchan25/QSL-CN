@@ -1,5 +1,11 @@
 # QSL-CN - Intelligent Quantitative Investment Analysis System
 
+<div align="center">
+
+[English](README.md) | [简体中文](README_CN.md)
+
+</div>
+
 ## 📊 Project Overview
 
 QSL-CN is an AI-powered analysis system for the Chinese A-share market, providing real-time market data analysis, intelligent investment recommendations, and professional market report generation. The system integrates multi-dimensional market analysis capabilities, including macroeconomic analysis, technical indicator analysis, and market sentiment monitoring, offering comprehensive decision support for investors.
