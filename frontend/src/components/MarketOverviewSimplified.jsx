@@ -80,6 +80,8 @@ export default function MarketOverview({ className = '' }) {
     }
   }
 
+  console.log('MarketOverview market data:', market)
+  
   if (!market) {
     return <div className={`market-overview ${className}`}>加载中...</div>
   }
@@ -90,17 +92,20 @@ export default function MarketOverview({ className = '' }) {
       <div className="market-section">
         <h4 className="section-title">今日大盘</h4>
         <div className="indices-grid">
-          {market.indices && market.indices.slice(0, 3).map((idx, i) => (
-            <div key={i} className="index-item">
-              <span className="index-name">{idx.name}</span>
-              <span className={`index-value ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
-                {idx.close || 'N/A'}
-              </span>
-              <span className={`index-change ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
-                {idx.pct_chg ? `${idx.pct_chg > 0 ? '+' : ''}${idx.pct_chg.toFixed(2)}%` : 'N/A'}
-              </span>
-            </div>
-          ))}
+          {market.indices && market.indices.slice(0, 3).map((idx, i) => {
+            console.log('Index item:', idx)
+            return (
+              <div key={i} className="index-item">
+                <span className="index-name">{idx.name || '未知指数'}</span>
+                <span className={`index-value ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
+                  {idx.close || 'N/A'}
+                </span>
+                <span className={`index-change ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
+                  {idx.pct_chg ? `${idx.pct_chg > 0 ? '+' : ''}${idx.pct_chg.toFixed(2)}%` : 'N/A'}
+                </span>
+              </div>
+            )
+          })}
         </div>
       </div>
 

@@ -223,6 +223,53 @@ def get_mock_news(src="sina", limit=100):
     return pd.DataFrame(data)
 
 
+def get_mock_index_daily(ts_code, start_date=None, end_date=None):
+    """模拟指数日线数据"""
+    # 定义各指数的基础价格
+    index_base_prices = {
+        "000001.SH": {"name": "上证指数", "base": 2950.0, "change": 0.8},
+        "399001.SZ": {"name": "深证成指", "base": 9200.0, "change": 1.2},
+        "399006.SZ": {"name": "创业板指", "base": 1680.0, "change": -0.5},
+        "000300.SH": {"name": "沪深300", "base": 3580.0, "change": 0.6},
+        "000016.SH": {"name": "上证50", "base": 2420.0, "change": 0.3},
+        "000905.SH": {"name": "中证500", "base": 4850.0, "change": 1.5},
+    }
+    
+    if ts_code not in index_base_prices:
+        # 如果指数不在预定义中，使用默认值
+        index_info = {"name": "未知指数", "base": 3000.0, "change": 0.0}
+    else:
+        index_info = index_base_prices[ts_code]
+    
+    # 生成最近一天的数据
+    today = datetime.now()
+    trade_date = today.strftime('%Y%m%d')
+    
+    base_price = index_info["base"]
+    pct_change = index_info["change"]
+    
+    # 模拟当日价格
+    close_price = base_price * (1 + pct_change / 100)
+    open_price = close_price * (1 + np.random.normal(0, 0.002))
+    high_price = max(open_price, close_price) * (1 + abs(np.random.normal(0, 0.001)))
+    low_price = min(open_price, close_price) * (1 - abs(np.random.normal(0, 0.001)))
+    
+    data = [{
+        "ts_code": ts_code,
+        "trade_date": trade_date,
+        "close": round(close_price, 2),
+        "open": round(open_price, 2),
+        "high": round(high_price, 2),
+        "low": round(low_price, 2),
+        "pct_chg": round(pct_change, 2),
+        "change": round(base_price * pct_change / 100, 2),
+        "vol": random.randint(50000000, 200000000),  # 成交量
+        "amount": random.randint(60000000, 300000000)  # 成交额
+    }]
+    
+    return pd.DataFrame(data)
+
+
 def get_mock_anns(ts_code, limit=15):
     """模拟公司公告"""
     ann_types = [

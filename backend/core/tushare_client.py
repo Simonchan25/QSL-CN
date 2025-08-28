@@ -14,7 +14,8 @@ from .mock_data import (
     get_mock_fina_indicator, get_mock_income, get_mock_balancesheet,
     get_mock_cashflow, get_mock_forecast, get_mock_express, get_mock_news,
     get_mock_anns, get_mock_moneyflow, get_mock_margin_detail,
-    get_mock_moneyflow_hsgt, get_mock_stk_limit, get_mock_macro_data
+    get_mock_moneyflow_hsgt, get_mock_stk_limit, get_mock_macro_data,
+    get_mock_index_daily
 )
 
 _TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN")
@@ -237,6 +238,11 @@ def _call_api(method_name: str, **kwargs):
         elif method_name == "moneyflow_hsgt":
             trade_date = kwargs.get("trade_date")
             return get_mock_moneyflow_hsgt(trade_date)
+        elif method_name == "index_daily":
+            ts_code = kwargs.get("ts_code")
+            start_date = kwargs.get("start_date")
+            end_date = kwargs.get("end_date")
+            return get_mock_index_daily(ts_code, start_date, end_date)
         elif method_name == "stk_limit":
             ts_code = kwargs.get("ts_code")
             trade_date = kwargs.get("trade_date")

@@ -20,6 +20,15 @@ INDEX_CODES: List[str] = [
     "000016.SH",  # 上证50
 ]
 
+INDEX_NAMES = {
+    "000001.SH": "上证指数",
+    "399001.SZ": "深证成指", 
+    "399006.SZ": "创业板指",
+    "000300.SH": "沪深300",
+    "000016.SH": "上证50",
+    "000905.SH": "中证500",
+}
+
 # 行业板块代码
 SECTOR_CODES: List[str] = [
     "801010.SI",  # 农林牧渔
@@ -267,6 +276,7 @@ def fetch_market_overview() -> Dict[str, Any]:
         pct_v = (row or {}).get("pct_chg")
         indices.append({
             "ts_code": code,
+            "name": INDEX_NAMES.get(code, "未知指数"),
             "trade_date": (row or {}).get("trade_date"),
             "close": float(close_v) if close_v is not None else None,
             "pct_chg": float(pct_v) if pct_v is not None else None,

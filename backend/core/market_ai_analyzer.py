@@ -1322,10 +1322,18 @@ class MarketAIAnalyzer:
             response.raise_for_status()
             
             result = response.json().get("response", "").strip()
-            # 去除thinking标签
-            if "<think>" in result and "</think>" in result:
-                result = result.split("</think>")[-1].strip()
-            return result if result else self._get_fallback_narrative(prompt_data)
+            # 去除thinking标签和其他思考内容
+            if "<think>" in result:
+                # 找到</think>标签的位置
+                think_end = result.find("</think>")
+                if think_end != -1:
+                    result = result[think_end + 8:].strip()
+            
+            # 如果包含"thinking"等关键词，使用后备方案
+            if "thinking" in result.lower() or "用户" in result or not result:
+                return self._get_fallback_narrative(prompt_data)
+            
+            return result
             
         except Exception as e:
             logger.error(f"LLM调用失败: {e}")

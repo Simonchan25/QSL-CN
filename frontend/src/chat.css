@@ -1723,8 +1723,8 @@ html {
   position: absolute;
   right: 0;
   bottom: 70px;
-  width: 340px;
-  max-height: 60vh;
+  width: min(92vw, 360px);
+  max-height: min(70vh, 70svh);
   display: flex;
   flex-direction: column;
   background: var(--bg-card);

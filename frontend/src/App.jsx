@@ -19,6 +19,10 @@ const getApiUrl = (path) => {
 export default function App() {
   // 页面导航状态
   const [activeTab, setActiveTab] = useState('stock') // 'stock', 'hotspot', 'reports'
+  // 移动端菜单状态
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  // 移动端市场概览状态
+  const [marketOverviewOpen, setMarketOverviewOpen] = useState(false)
   
   // 个股分析状态
   const [name, setName] = useState('贵州茅台')
@@ -260,6 +264,7 @@ export default function App() {
       setShowTerminal(false)
       setProgress([]); setLogLines([])
       setName(h.name)
+      setSidebarOpen(false) // 选择历史记录后关闭侦边栏
       if (h && h.data && Object.keys(h.data).length) {
         setData(h.data)
         return
@@ -287,6 +292,7 @@ export default function App() {
     try {
       setHotspotError('')
       setHotspotKeyword(h.keyword)
+      setSidebarOpen(false) // 选择历史记录后关闭侦边栏
       if (h && h.data && Object.keys(h.data).length) {
         setHotspotData(h.data)
         return
@@ -311,9 +317,16 @@ export default function App() {
   }
 
   return (
-    <div className="app-container">
+    <div className="app-container" role="application">
       <header className="app-header">
         <div className="header-content">
+          {/* 移动端菜单按钮 */}
+          <button className="mobile-menu-button" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+            </svg>
+          </button>
+          
           <div className="logo-section">
             <svg className="logo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
               <rect x="10" y="20" width="15" height="60" fill="currentColor" opacity="0.8"/>
@@ -326,6 +339,16 @@ export default function App() {
               <p className="app-subtitle">智能股票分析与决策支持系统</p>
             </div>
           </div>
+          
+          {/* 移动端市场概览按钮 */}
+          <button className="mobile-market-button" onClick={() => {
+            console.log('Market button clicked, current state:', marketOverviewOpen)
+            setMarketOverviewOpen(!marketOverviewOpen)
+          }} aria-label="市场概览">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3,13H7L10,17L13,13H17L22,6L19.5,7.5L16.5,4.5L12,9L10.5,7.5L3,14.5V13Z"/>
+            </svg>
+          </button>
           
           {/* 导航标签 */}
           <nav className="header-nav">
@@ -352,12 +375,17 @@ export default function App() {
       </header>
 
       <div className="app-body">
+        {/* 移动端侧边栏遮罩 */}
+        <div className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}></div>
+        {/* 移动端市场概览遮罩 */}
+        <div className={`sidebar-overlay market-overlay ${marketOverviewOpen ? 'active' : ''}`} onClick={() => setMarketOverviewOpen(false)}></div>
+        
         <div className={`main-layout ${activeTab}`}>
           {/* 个股分析页面 */}
           {activeTab === 'stock' && (
             <>
-              {/* 左侧栏 */}
-              <aside className="left-sidebar">
+              {/* 左侧栏 - 桌面端显示，移动端作为抽屉 */}
+              <aside className={`left-sidebar ${sidebarOpen ? 'active' : ''}`}>
                 <div className="sidebar-section">
                   <h3 className="sidebar-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg> 个股分析</h3>
                   <div className="search-box">
@@ -410,6 +438,22 @@ export default function App() {
 
               {/* 中间内容区 */}
               <main className="content-area">
+                {/* 移动端搜索框 - 仅在小屏幕显示 */}
+                <div className="mobile-search-container">
+                  <div className="search-box mobile-only">
+                    <input 
+                      type="text"
+                      value={name} 
+                      onChange={e=>setName(e.target.value)} 
+                      placeholder="输入股票名称或代码" 
+                      onKeyDown={(e) => e.key === 'Enter' && !loading && analyze()}
+                    />
+                    <button className="search-button" onClick={analyze} disabled={loading}>
+                      {loading ? <><span className="spinner"></span> 分析中...</> : '开始分析'}
+                    </button>
+                  </div>
+                </div>
+                
                 {!data && !loading && !showTerminal && (
                   <div className="empty-analysis">
                     <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16,6L18.29,8.29L13.41,13.17L9.41,9.17L2,16.59L3.41,18L9.41,12L13.41,16L19.71,9.71L22,12V6H16Z"/></svg> 等待分析</h3>
@@ -485,7 +529,7 @@ export default function App() {
           {activeTab === 'hotspot' && (
             <>
               {/* 左侧栏 */}
-              <aside className="left-sidebar">
+              <aside className={`left-sidebar ${sidebarOpen ? 'active' : ''}`}>
                 <div className="sidebar-section">
                   <h3 className="sidebar-title">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
@@ -548,6 +592,22 @@ export default function App() {
 
               {/* 中间内容区 */}
               <main className="content-area">
+                {/* 移动端搜索框 - 仅在小屏幕显示 */}
+                <div className="mobile-search-container">
+                  <div className="search-box mobile-only">
+                    <input 
+                      type="text"
+                      value={hotspotKeyword} 
+                      onChange={e=>setHotspotKeyword(e.target.value)} 
+                      placeholder="输入概念关键词" 
+                      onKeyDown={(e) => e.key === 'Enter' && !hotspotLoading && analyzeHotspot()}
+                    />
+                    <button className="search-button" onClick={analyzeHotspot} disabled={hotspotLoading}>
+                      {hotspotLoading ? <><span className="spinner"></span> 分析中...</> : '分析热点'}
+                    </button>
+                  </div>
+                </div>
+                
                 {!hotspotData && !hotspotLoading && (
                   <div className="empty-analysis">
                     <h3>
@@ -574,27 +634,27 @@ export default function App() {
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M3,13H7L10,17L13,13H17L22,6L19.5,7.5L16.5,4.5L12,9L10.5,7.5L3,14.5V13Z"/>
                           </svg>
-                          <span className="stat-value">{hotspotData.stock_count || 0}</span>
+                          <span className="stat-value">{hotspotData?.stock_count || 0}</span>
                           <span className="stat-label">相关股票</span>
                         </div>
                         <div className="stat-item">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M9,17H7V10H9V17M13,17H11V7H13V17M17,17H15V13H17V17Z"/>
                           </svg>
-                          <span className="stat-value">{hotspotData.analyzed_count || 0}</span>
+                          <span className="stat-value">{hotspotData?.analyzed_count || 0}</span>
                           <span className="stat-label">分析数量</span>
                         </div>
                         <div className="stat-item">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M20 5L20 19L4 19L4 5H20M20 3H4C2.89 3 2 3.89 2 5V19C2 20.11 2.89 21 4 21H20C21.11 21 22 20.11 22 19V5C22 3.89 21.11 3 20 3M18 15H6V17H18V15M10 7H6V13H10V7M12 9H18V7H12V9M18 11H12V13H18V11Z"/>
                           </svg>
-                          <span className="stat-value">{hotspotData.news?.news_count || 0}</span>
+                          <span className="stat-value">{hotspotData?.news?.news_count || 0}</span>
                           <span className="stat-label">相关新闻</span>
                         </div>
                       </div>
                     </div>
                     
-                    {hotspotData.llm_summary && (
+                    {hotspotData?.llm_summary && (
                       <div className="result-card llm-summary">
                         <h3 className="card-title">
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
@@ -619,6 +679,7 @@ export default function App() {
                           相关股票排名
                         </h3>
                         <div className="stocks-table-container">
+                          {/* 桌面端表格 */}
                           <table className="hotspot-table">
                             <thead>
                               <tr>
@@ -633,22 +694,44 @@ export default function App() {
                               </tr>
                             </thead>
                             <tbody>
-                              {hotspotData.stocks.map((stock, i) => (
+                              {(hotspotData?.stocks || []).map((stock, i) => (
                                 <tr key={i}>
                                   <td>{i + 1}</td>
-                                  <td className="stock-name">{stock.name}</td>
-                                  <td>{stock.industry}</td>
-                                  <td>{stock.relevance_score}</td>
-                                  <td>{stock.tech_score}</td>
-                                  <td>{stock.fund_score}</td>
-                                  <td className="final-score">{stock.final_score}</td>
-                                  <td className={stock.price_change_pct > 0 ? 'up' : stock.price_change_pct < 0 ? 'down' : ''}>
-                                    {stock.price_change_pct ? `${stock.price_change_pct > 0 ? '+' : ''}${stock.price_change_pct}%` : '-'}
+                                  <td className="stock-name">{stock?.name || '-'}</td>
+                                  <td>{stock?.industry || '-'}</td>
+                                  <td>{stock?.relevance_score || '-'}</td>
+                                  <td>{stock?.tech_score || '-'}</td>
+                                  <td>{stock?.fund_score || '-'}</td>
+                                  <td className="final-score">{stock?.final_score || '-'}</td>
+                                  <td className={stock?.price_change_pct > 0 ? 'up' : stock?.price_change_pct < 0 ? 'down' : ''}>
+                                    {stock?.price_change_pct ? `${stock.price_change_pct > 0 ? '+' : ''}${stock.price_change_pct}%` : '-'}
                                   </td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
+                          
+                          {/* 移动端卡片列表 */}
+                          <div className="mobile-stock-cards" style={{display: 'none'}}>
+                            {(hotspotData?.stocks || []).map((stock, i) => (
+                              <div key={i} className="mobile-stock-card">
+                                <span className="stock-rank">#{i + 1}</span>
+                                <div className="stock-info">
+                                  <span className="stock-name">{stock?.name || '-'}</span>
+                                  <span className={`stock-change ${stock?.price_change_pct > 0 ? 'up' : stock?.price_change_pct < 0 ? 'down' : ''}`}>
+                                    {stock?.price_change_pct ? `${stock.price_change_pct > 0 ? '+' : ''}${stock.price_change_pct}%` : '-'}
+                                  </span>
+                                </div>
+                                <div className="stock-scores">
+                                  <span className="score-item">{stock?.industry || '-'}</span>
+                                  <span className="score-item">相关度: {stock?.relevance_score || '-'}</span>
+                                  <span className="score-item">技术: {stock?.tech_score || '-'}</span>
+                                  <span className="score-item">基本: {stock?.fund_score || '-'}</span>
+                                  <span className="score-item" style={{fontWeight: 'bold'}}>综合: {stock?.final_score || '-'}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -990,8 +1073,16 @@ export default function App() {
             </>
           )}
 
-          {/* 右侧今日大盘 */}
-          <aside className="right-sidebar">
+          {/* 右侧今日大盘 - 桌面端固定显示，移动端模态框 */}
+          <aside className={`right-sidebar ${marketOverviewOpen ? 'mobile-active' : ''}`} style={{
+            border: marketOverviewOpen ? '2px solid red' : '2px solid blue'
+          }}>
+            {/* 移动端关闭按钮 */}
+            <button className="mobile-close-button" onClick={() => setMarketOverviewOpen(false)}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
+              </svg>
+            </button>
             <MarketOverview />
           </aside>
         </div>
