@@ -132,7 +132,7 @@ export default function MarketOverview({ className = '' }) {
       
       // 2. 资金流向分析
       if (marketData.capital_flow) {
-        const northFlow = marketData.capital_flow.hsgt_net_amount || 0
+        const northFlow = (marketData.capital_flow.hsgt_net_amount !== null) ? marketData.capital_flow.hsgt_net_amount : 0
         let flowAnalysis = ''
         if (northFlow > 100) {
           flowAnalysis = `💰 北向资金大举流入${northFlow.toFixed(1)}亿，外资坚定看多A股，重点关注外资偏好的核心资产。`
@@ -203,7 +203,7 @@ export default function MarketOverview({ className = '' }) {
       
       // 6. 操作建议
       let suggestion = ''
-      if (avgChange > 1 && marketData.capital_flow?.hsgt_net_amount > 50) {
+      if (avgChange > 1 && marketData.capital_flow?.hsgt_net_amount !== null && marketData.capital_flow?.hsgt_net_amount > 50) {
         suggestion = `💡 操作建议：市场强势且北向资金流入，可适度加仓，重点关注${marketData.sectors?.[0]?.name || '领涨板块'}的龙头股。建议仓位控制在60-70%。`
       } else if (avgChange > 0) {
         suggestion = `💡 操作建议：市场震荡向上，可维持半仓操作，采取高抛低吸策略。关注${marketData.hot_stocks?.[0]?.name || '热门'}等市场热点。`
@@ -258,8 +258,15 @@ export default function MarketOverview({ className = '' }) {
       
       {/* 1. 指数表现 */}
       <div className="market-section">
-        <h4 className="section-title">指数表现</h4>
-        <div className="indices-grid">
+        <h4 className="section-title">
+          指数表现
+          {market.data_date && (
+            <span className="data-date">
+              数据日期: {market.data_date.toString().replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}
+            </span>
+          )}
+        </h4>
+        <div className="indices-rows">
           {market.indices.slice(0, 3).map((idx, i) => {
             const name = idx.ts_code === "000001.SH" ? '上证指数' : 
                          idx.ts_code === "399001.SZ" ? '深证成指' : 
@@ -267,11 +274,13 @@ export default function MarketOverview({ className = '' }) {
             const cls = idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'
             
             return (
-              <div key={i} className={`index-card ${cls}`}>
+              <div key={i} className={`index-row ${cls}`}>
                 <div className="index-name">{name}</div>
-                <div className="index-price">{idx.close?.toFixed(2) || 'N/A'}</div>
-                <div className="index-change">
-                  {idx.pct_chg !== null ? `${idx.pct_chg > 0 ? '+' : ''}${idx.pct_chg.toFixed(2)}%` : 'N/A'}
+                <div className="index-values">
+                  <div className="index-price">{idx.close?.toFixed(2) || 'N/A'}</div>
+                  <div className="index-change">
+                    {idx.pct_chg !== null ? `${idx.pct_chg > 0 ? '+' : ''}${idx.pct_chg.toFixed(2)}%` : 'N/A'}
+                  </div>
                 </div>
               </div>
             )
@@ -291,15 +300,25 @@ export default function MarketOverview({ className = '' }) {
             <div className="sentiment-item">
               <span className="sentiment-label">涨跌家数</span>
               <span className="sentiment-value">
-                {market.market_breadth.up_count}↑ / {market.market_breadth.down_count}↓
+                <span className="up">{market.market_breadth.up_count || 0}↑</span>
+                {' / '}
+                <span className="down">{market.market_breadth.down_count || 0}↓</span>
               </span>
             </div>
           )}
-          {market.capital_flow && (
+          {market.capital_flow && market.capital_flow.hsgt_net_amount !== null && (
             <div className="sentiment-item">
               <span className="sentiment-label">北向资金</span>
               <span className={`sentiment-value ${market.capital_flow.hsgt_net_amount > 0 ? 'up' : 'down'}`}>
                 {market.capital_flow.hsgt_net_amount > 0 ? '净流入' : '净流出'} {Math.abs(market.capital_flow.hsgt_net_amount).toFixed(1)}亿
+              </span>
+            </div>
+          )}
+          {market.capital_flow && market.capital_flow.hsgt_net_amount === null && (
+            <div className="sentiment-item">
+              <span className="sentiment-label">北向资金</span>
+              <span className="sentiment-value neutral">
+                暂无数据
               </span>
             </div>
           )}
@@ -420,12 +439,18 @@ export default function MarketOverview({ className = '' }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '4px', verticalAlign: 'middle'}}>
               <path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/>
             </svg>
-            预警 ({marketAlerts.length})
+            智能预警 ({marketAlerts.length})
           </h4>
           <div className="alerts-container">
             {marketAlerts.slice(0, 2).map((alert, index) => (
-              <div key={index} className={`alert-item alert-${alert.level}`}>
-                <div className="alert-message">{alert.message}</div>
+              <div key={index} className={`alert-item alert-${alert.level || 'info'}`}>
+                <div className="alert-message">{alert.message || alert}</div>
+                {alert.action && (
+                  <div className="alert-action">
+                    <span className="action-label">建议:</span>
+                    <span className="action-text">{alert.action}</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -719,49 +744,6 @@ export default function MarketOverview({ className = '' }) {
           </div>
         </div>
       )}
-
-      {/* 恐慌贪婪指数 */}
-      {fearGreedIndex && (
-        <div className="market-section fear-greed-section">
-          <h4 className="section-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '4px', verticalAlign: 'middle'}}>
-              <path d="M12,2A2,2 0 0,1 14,4V5.5L15.5,7H17A2,2 0 0,1 19,9V10A2,2 0 0,1 17,12H15L13.5,13.5V19A2,2 0 0,1 11,21H9A2,2 0 0,1 7,19V13.5L5.5,12H4A2,2 0 0,1 2,10V9A2,2 0 0,1 4,7H5.5L7,5.5V4A2,2 0 0,1 9,2H12M12,4H9V6L7,8H4V10H7L9,12V19H11V12L13,10H17V8H13L12,6V4Z"/>
-            </svg>
-            恐慌贪婪指数
-          </h4>
-          <div className="fear-greed-display">
-            <div className="fear-greed-score">
-              <span className={`score-value ${fearGreedIndex.level}`}>{fearGreedIndex.score}</span>
-              <span className="score-level">{fearGreedIndex.level}</span>
-            </div>
-            <div className="fear-greed-interpretation">
-              {fearGreedIndex.interpretation}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* 智能预警 */}
-      {marketAlerts && marketAlerts.length > 0 && (
-        <div className="market-section alerts-section">
-          <h4 className="section-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '4px', verticalAlign: 'middle'}}>
-              <path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/>
-            </svg>
-            智能预警 ({marketAlerts.length})
-          </h4>
-          <div className="alerts-container">
-            {marketAlerts.slice(0, 3).map((alert, index) => (
-              <div key={index} className={`alert-item alert-${alert.level}`}>
-                <div className="alert-message">{alert.message}</div>
-                {alert.action && (
-                  <div className="alert-action">建议: {alert.action}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
       
       {/* 增强版AI智能解读 */}
       {enhancedAnalysis && enhancedAnalysis.intelligent_narrative && (
@@ -788,8 +770,14 @@ export default function MarketOverview({ className = '' }) {
         <div className="market-section">
           <h4 className="section-title">SHIBOR</h4>
           <div className="shibor-items">
-            <span className="shibor-item">隔夜: {market.shibor.on || 'N/A'}</span>
-            <span className="shibor-item">1周: {market.shibor['1w'] || 'N/A'}</span>
+            <span className="shibor-item">
+              <span className="shibor-label">隔夜:</span>
+              <span className="shibor-value">{market.shibor.on || 'N/A'}%</span>
+            </span>
+            <span className="shibor-item">
+              <span className="shibor-label">1周:</span>
+              <span className="shibor-value">{market.shibor['1w'] || 'N/A'}%</span>
+            </span>
           </div>
         </div>
       )}

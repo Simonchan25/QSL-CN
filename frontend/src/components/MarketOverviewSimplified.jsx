@@ -16,6 +16,7 @@ export default function MarketOverview({ className = '' }) {
   const [fearGreedIndex, setFearGreedIndex] = useState(null)
   const [marketAlerts, setMarketAlerts] = useState([])
   const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     loadMarketData()
@@ -30,17 +31,43 @@ export default function MarketOverview({ className = '' }) {
         const data = await res.json()
         setMarket(data)
         
+        // 从市场数据中提取预警信息
+        if (data.alerts && data.alerts.length > 0) {
+          setMarketAlerts(data.alerts)
+        } else {
+          // 如果主API没有预警数据，尝试单独加载
+          loadMarketAlerts()
+        }
+        
         // 加载增强版分析
         loadEnhancedAnalysis()
         
         // 加载恐慌贪婪指数
         loadFearGreedIndex()
-        
-        // 加载市场预警
-        loadMarketAlerts()
       }
     } catch (e) {
       console.error('Failed to load market data:', e)
+    }
+  }
+
+  const refreshMarketData = async () => {
+    if (refreshing) return
+    
+    setRefreshing(true)
+    try {
+      // 调用后端刷新接口
+      const refreshRes = await fetch(getApiUrl('/market/refresh'), {
+        method: 'POST'
+      })
+      
+      if (refreshRes.ok) {
+        // 刷新成功后重新加载数据
+        await loadMarketData()
+      }
+    } catch (e) {
+      console.error('Failed to refresh market data:', e)
+    } finally {
+      setRefreshing(false)
     }
   }
   
@@ -74,13 +101,14 @@ export default function MarketOverview({ className = '' }) {
       if (res.ok) {
         const data = await res.json()
         setMarketAlerts(data.alerts || [])
+      } else {
+        console.error('Market alerts request failed:', res.status, res.statusText)
       }
     } catch (e) {
       console.error('Failed to load market alerts:', e)
     }
   }
 
-  console.log('MarketOverview market data:', market)
   
   if (!market) {
     return <div className={`market-overview ${className}`}>加载中...</div>
@@ -90,23 +118,66 @@ export default function MarketOverview({ className = '' }) {
     <div className={`market-overview ${className}`}>
       {/* 1. 今日大盘 */}
       <div className="market-section">
-        <h4 className="section-title">今日大盘</h4>
-        <div className="indices-grid">
+        <h4 className="section-title">
+          <span>
+            今日大盘
+            {market.data_date && (
+              <span className="data-date-info">
+                {market.data_date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}
+              </span>
+            )}
+            {market.data_type && (
+              <span className={`data-type-badge ${market.is_realtime ? 'realtime' : 'historical'}`}>
+                {market.is_realtime ? '当日收盘' : market.data_type}
+              </span>
+            )}
+          </span>
+          <button 
+            className={`refresh-btn ${refreshing ? 'refreshing' : ''}`}
+            onClick={refreshMarketData}
+            disabled={refreshing}
+            title="刷新市场数据"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+            </svg>
+            {refreshing ? '刷新中...' : ''}
+          </button>
+        </h4>
+        <div className="indices-rows">
           {market.indices && market.indices.slice(0, 3).map((idx, i) => {
-            console.log('Index item:', idx)
+            const indexNames = ['上证指数', '深证成指', '创业板指'];
+            const indexName = indexNames[i] || idx.name || '未知指数';
+            
             return (
-              <div key={i} className="index-item">
-                <span className="index-name">{idx.name || '未知指数'}</span>
-                <span className={`index-value ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
-                  {idx.close || 'N/A'}
-                </span>
-                <span className={`index-change ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
-                  {idx.pct_chg ? `${idx.pct_chg > 0 ? '+' : ''}${idx.pct_chg.toFixed(2)}%` : 'N/A'}
-                </span>
+              <div key={i} className="index-row">
+                <div className="index-name">{indexName}</div>
+                <div className="index-values">
+                  <span className={`index-value ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
+                    {idx.close ? idx.close.toFixed(4) : 'N/A'}
+                  </span>
+                  <span className={`index-change ${idx.pct_chg > 0 ? 'up' : idx.pct_chg < 0 ? 'down' : 'neutral'}`}>
+                    {idx.pct_chg ? `${idx.pct_chg > 0 ? '+' : ''}${idx.pct_chg.toFixed(2)}%` : 'N/A'}
+                  </span>
+                </div>
               </div>
             )
           })}
         </div>
+        
+        {/* 数据说明 */}
+        {market.is_realtime && (
+          <div className="data-info-panel">
+            <div className="data-info-item">
+              <span className="info-icon">📈</span>
+              <span className="info-text">收盘价格 (15:00)</span>
+            </div>
+            <div className="data-info-item">  
+              <span className="info-icon">⏰</span>
+              <span className="info-text">更新时间: {new Date(market.timestamp).toLocaleTimeString('zh-CN')}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. 市场情绪 */}
@@ -116,14 +187,28 @@ export default function MarketOverview({ className = '' }) {
           <div className="sentiment-item">
             <span className="sentiment-label">涨跌家数</span>
             <span className="sentiment-value">
-              {market.market_breadth?.up_count || 0}↑ / {market.market_breadth?.down_count || 0}↓
+              {(market.market_breadth?.up_count !== null && 
+                market.market_breadth?.up_count !== undefined && 
+                market.market_breadth?.down_count !== null && 
+                market.market_breadth?.down_count !== undefined) ? 
+                `${market.market_breadth.up_count}↑ / ${market.market_breadth.down_count}↓` : 
+                '暂无数据'
+              }
             </span>
           </div>
-          {market.capital_flow && (
+          {market.capital_flow && market.capital_flow.north_flow && (
             <div className="sentiment-item">
               <span className="sentiment-label">北向资金</span>
-              <span className={`sentiment-value ${market.capital_flow.hsgt_net_amount > 0 ? 'up' : 'down'}`}>
-                {market.capital_flow.hsgt_net_amount > 0 ? '净流入' : '净流出'} {Math.abs(market.capital_flow.hsgt_net_amount).toFixed(1)}亿
+              <span className={`sentiment-value ${(market.capital_flow.north_flow.north_money || 0) > 0 ? 'up' : 'down'}`}>
+                {(market.capital_flow.north_flow.north_money || 0) > 0 ? '净流入' : '净流出'} {Math.abs(market.capital_flow.north_flow.north_money || 0).toFixed(1)}亿
+              </span>
+            </div>
+          )}
+          {market.capital_flow && !market.capital_flow.north_flow && (
+            <div className="sentiment-item">
+              <span className="sentiment-label">北向资金</span>
+              <span className="sentiment-value neutral">
+                暂无数据
               </span>
             </div>
           )}

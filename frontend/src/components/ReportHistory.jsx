@@ -25,7 +25,7 @@ export default function ReportHistory({ onSelectReport }) {
       const res = await fetch(getApiUrl('/reports/history?days=30'))
       if (res.ok) {
         const data = await res.json()
-        setHistory(data)
+        setHistory(data.history || [])
       }
     } catch (e) {
       console.error('Failed to load report history:', e)

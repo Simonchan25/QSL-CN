@@ -1,0 +1,112 @@
+/* 统一深色主题配色方案 */
+:root {
+  /* 主要背景色 */
+  --bg-primary: #0f1419;        /* 最深的背景色 */
+  --bg-secondary: #1a1f2e;      /* 次深背景色 */
+  --bg-tertiary: #232937;       /* 第三层背景色 */
+  --bg-hover: #2a3241;          /* 悬停背景色 */
+  
+  /* 半透明背景 - 使用深色基调 */
+  --bg-overlay-1: rgba(30, 40, 50, 0.3);
+  --bg-overlay-2: rgba(30, 40, 50, 0.4);
+  --bg-overlay-3: rgba(30, 40, 50, 0.5);
+  --bg-overlay-4: rgba(30, 40, 50, 0.6);
+  --bg-overlay-5: rgba(30, 40, 50, 0.7);
+  --bg-overlay-6: rgba(30, 40, 50, 0.8);
+  
+  /* 边框颜色 */
+  --border-primary: rgba(79, 195, 247, 0.15);
+  --border-secondary: rgba(79, 195, 247, 0.25);
+  --border-tertiary: #30363d;
+  
+  /* 文字颜色 */
+  --text-primary: rgba(255, 255, 255, 0.95);
+  --text-secondary: rgba(255, 255, 255, 0.8);
+  --text-tertiary: rgba(255, 255, 255, 0.6);
+  --text-muted: rgba(255, 255, 255, 0.4);
+  
+  /* 主题色 */
+  --color-primary: #4fc3f7;     /* 主要蓝色 */
+  --color-secondary: #2196f3;   /* 次要蓝色 */
+  --color-success: #4caf50;     /* 成功绿色 */
+  --color-warning: #ff9800;     /* 警告橙色 */
+  --color-danger: #ff6b6b;      /* 危险红色 */
+  --color-info: #64b5f6;        /* 信息蓝色 */
+  
+  /* 涨跌颜色（中国股市） */
+  --color-rise: #ff6b6b;        /* 涨 - 红色 */
+  --color-fall: #4caf50;        /* 跌 - 绿色 */
+  --color-flat: #999;           /* 平 - 灰色 */
+  
+  /* 渐变色 */
+  --gradient-primary: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+  --gradient-secondary: linear-gradient(135deg, #4fc3f7 0%, #2196f3 100%);
+  --gradient-danger: linear-gradient(135deg, #ff6b6b 0%, #f06595 100%);
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 12px 36px rgba(0, 0, 0, 0.6);
+  
+  /* 特殊效果 */
+  --glow-primary: 0 0 20px rgba(79, 195, 247, 0.5);
+  --glow-danger: 0 0 20px rgba(255, 107, 107, 0.5);
+  
+  /* 兼容chat.css的变量 */
+  --bg-card: #232937;
+  --bg-card-hover: #2a3241;
+  --bg-hover: #2a3241;
+  --border: rgba(79, 195, 247, 0.15);
+  --border-hover: rgba(79, 195, 247, 0.25);
+}
+
+/* 强制深色模式 */
+body {
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 移除所有浅色模式媒体查询 */
+@media (prefers-color-scheme: light) {
+  /* 强制使用深色主题，忽略系统偏好 */
+  :root {
+    /* 保持深色主题变量不变 */
+  }
+}
+
+/* 全局输入框深色样式 */
+input,
+textarea,
+select {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border: 2px solid var(--border-primary) !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  background-color: var(--bg-tertiary) !important;
+  border-color: var(--border-secondary) !important;
+  outline: none;
+}
+
+/* 滚动条深色样式 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-hover);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(79, 195, 247, 0.3);
+}

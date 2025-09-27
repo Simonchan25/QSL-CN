@@ -12,7 +12,7 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 import pytz
 import logging
 
-from .report_generator import get_report_generator
+from .professional_report_generator_v2 import ProfessionalReportGeneratorV2
 from .concept_manager import get_concept_manager
 from .cache_strategy import get_smart_cache
 
@@ -22,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 class TaskScheduler:
     """智能任务调度器"""
-    
+
     def __init__(self):
         self.scheduler = BackgroundScheduler(timezone=pytz.timezone('Asia/Shanghai'))
-        self.report_gen = get_report_generator()
+        self.report_gen = ProfessionalReportGeneratorV2()
         self.concept_mgr = get_concept_manager()
         self.cache = get_smart_cache()
         
@@ -41,7 +41,16 @@ class TaskScheduler:
     
     def _setup_scheduled_tasks(self):
         """设置所有定时任务"""
-        
+
+        # 0. 新闻预处理 (每天凌晨 03:00) - 新增
+        self.scheduler.add_job(
+            func=self._preprocess_news,
+            trigger=CronTrigger(hour=3, minute=0, second=0),
+            id='preprocess_news',
+            name='新闻预处理',
+            misfire_grace_time=1800  # 30分钟容错
+        )
+
         # 1. 早报生成 (每个交易日 08:30)
         self.scheduler.add_job(
             func=self._generate_morning_report,
@@ -272,12 +281,32 @@ class TaskScheduler:
             if not self._is_trading_time():
                 return
             
-            # 在这里添加市场数据刷新逻辑
-            # 例如：刷新指数数据、涨跌停统计等
-            logger.debug("市场数据刷新完成")
+            # 刷新指数数据缓存
+            self._clear_index_cache()
+            
+            # 刷新市场数据
+            from .market import fetch_market_overview
+            market_data = fetch_market_overview()
+            logger.info(f"市场数据刷新完成 - 指数数量: {len(market_data.get('indices', []))}")
             
         except Exception as e:
             logger.error(f"市场数据刷新失败: {e}")
+    
+    def _clear_index_cache(self):
+        """清理指数数据缓存"""
+        try:
+            import os
+            import glob
+            cache_pattern = ".cache/index_daily_*"
+            cache_files = glob.glob(cache_pattern)
+            for file in cache_files:
+                try:
+                    os.remove(file)
+                except Exception:
+                    pass
+            logger.debug(f"清理了 {len(cache_files)} 个指数缓存文件")
+        except Exception as e:
+            logger.error(f"清理缓存失败: {e}")
     
     def _update_basic_data(self):
         """更新基础数据任务"""
@@ -305,9 +334,36 @@ class TaskScheduler:
         try:
             # 爬取最新新闻和公告
             logger.debug("新闻公告爬取完成")
-            
+
         except Exception as e:
             logger.error(f"新闻公告爬取失败: {e}")
+
+    def _preprocess_news(self):
+        """新闻预处理任务 - 使用LLM深度分析所有新闻"""
+        try:
+            logger.info("开始新闻预处理任务...")
+
+            # 导入智能匹配器
+            from .intelligent_news_matcher import intelligent_matcher
+
+            # 执行预处理
+            processed = intelligent_matcher.daily_preprocessing_task()
+
+            self.task_status['preprocess_news'] = {
+                'last_run': datetime.now().isoformat(),
+                'status': 'success',
+                'processed_count': len(processed)
+            }
+
+            logger.info(f"新闻预处理完成: 处理了 {len(processed)} 条新闻")
+
+        except Exception as e:
+            logger.error(f"新闻预处理失败: {e}")
+            self.task_status['preprocess_news'] = {
+                'last_run': datetime.now().isoformat(),
+                'status': 'error',
+                'error': str(e)
+            }
     
     def _is_trading_day(self) -> bool:
         """判断是否为交易日"""

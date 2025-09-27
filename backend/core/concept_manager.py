@@ -1,16 +1,16 @@
 """
-概念库管理器 - 精准匹配概念成分股
+概念库管理器 - 纯真实数据版本
 """
 import pandas as pd
 from typing import List, Dict, Set
 from .tushare_client import _call_api
-from .mock_data import is_mock_mode
 import json
 import os
+import time
 from datetime import datetime, timedelta
 
 class ConceptManager:
-    """概念股管理器"""
+    """概念股管理器 - 使用真实数据"""
     
     def __init__(self):
         self.cache_path = os.path.join(os.path.dirname(__file__), '../.cache/concepts.json')
@@ -28,216 +28,165 @@ class ConceptManager:
                         self._concept_map = cache.get('data', {})
                         print(f"[概念库] 加载缓存: {len(self._concept_map)}个概念")
         except Exception as e:
-            print(f"[概念库] 缓存加载失败: {e}")
+            print(f"[概念库] 加载缓存失败: {e}")
     
-    def _save_cache(self):
-        """保存概念库到缓存"""
-        try:
-            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
-            with open(self.cache_path, 'w', encoding='utf-8') as f:
-                json.dump({
-                    'timestamp': datetime.now().timestamp(),
-                    'data': self._concept_map
-                }, f, ensure_ascii=False, indent=2)
-            print(f"[概念库] 缓存已保存")
-        except Exception as e:
-            print(f"[概念库] 缓存保存失败: {e}")
-    
-    def refresh_concepts(self) -> Dict[str, List[str]]:
+    def get_all_concepts(self) -> Dict[str, List[str]]:
         """
-        刷新概念库
+        获取所有概念及其成分股
         返回: {概念名: [股票代码列表]}
         """
-        if is_mock_mode():
-            # 模拟数据模式
-            self._concept_map = self._get_mock_concepts()
+        if self._concept_map is not None:
             return self._concept_map
-        
+            
+        return self._refresh_concepts()
+    
+    def _refresh_concepts(self) -> Dict[str, List[str]]:
+        """刷新概念库 - 使用同花顺API避免频率限制"""
         try:
-            # 获取概念列表
-            concepts_df = _call_api('concept')
+            # 使用ths_index获取同花顺概念板块列表，type='N'表示概念指数
+            concepts_df = _call_api('ths_index', type='N', exchange='A')
             if concepts_df.empty:
-                return self._get_mock_concepts()
-            
+                print("[概念库] 同花顺概念数据为空")
+                return {}
+
             concept_map = {}
-            
-            # 获取每个概念的成分股
-            for _, row in concepts_df.iterrows():
-                concept_code = row.get('code')
-                concept_name = row.get('name')
-                
-                if not concept_code or not concept_name:
-                    continue
-                
+
+            print(f"[概念库] 获取到 {len(concepts_df)} 个同花顺概念，开始获取成分股...")
+
+            # 获取每个概念的成分股 - 使用ths_member API
+            for i, (_, row) in enumerate(concepts_df.iterrows()):
+                ts_code = row['ts_code']  # 板块指数代码
+                concept_name = row['name']  # 概念名称
+
+                # 限制处理数量，避免API频率问题（先处理前100个热门概念）
+                if i >= 100:
+                    print(f"[概念库] 为避免API频率限制，暂时只处理前100个概念")
+                    break
+
                 try:
-                    # 获取概念成分股
-                    members_df = _call_api('concept_detail', id=concept_code)
-                    if not members_df.empty:
-                        stock_list = members_df['ts_code'].tolist()
-                        concept_map[concept_name] = stock_list
-                        print(f"[概念库] {concept_name}: {len(stock_list)}只成分股")
+                    # 使用ths_member获取该概念板块的成分股
+                    detail_df = _call_api('ths_member', ts_code=ts_code)
+                    if not detail_df.empty:
+                        stocks = []
+                        for _, stock_row in detail_df.iterrows():
+                            con_code = stock_row.get('con_code', '')  # 注意：ths_member返回的是con_code
+                            if con_code:
+                                stocks.append(con_code)
+
+                        if stocks:
+                            concept_map[concept_name] = stocks
+                            print(f"[概念库] {concept_name}: {len(stocks)}只股票")
+
                 except Exception as e:
-                    print(f"[概念库] 获取{concept_name}成分股失败: {e}")
-            
-            # 获取同花顺概念
-            try:
-                ths_concepts = _call_api('ths_index')
-                for _, row in ths_concepts.iterrows():
-                    concept_name = row.get('name')
-                    if concept_name and '概念' in concept_name:
-                        # 获取同花顺概念成分股
-                        try:
-                            ths_members = _call_api('ths_member', ts_code=row.get('ts_code'))
-                            if not ths_members.empty:
-                                stock_list = ths_members['code'].tolist()
-                                # 转换为ts_code格式
-                                stock_list = [self._to_ts_code(code) for code in stock_list]
-                                concept_map[concept_name] = stock_list
-                        except:
-                            pass
-            except:
-                pass
-            
+                    print(f"[概念库] 获取概念 {concept_name} 成分股失败: {e}")
+                    # 如果是频率限制错误，等待一段时间
+                    if "频率限制" in str(e) or "frequency" in str(e).lower():
+                        print("[概念库] 遇到频率限制，等待60秒后继续...")
+                        time.sleep(60)
+                    continue
+
+            # 保存到缓存
+            self._save_cache(concept_map)
             self._concept_map = concept_map
-            self._save_cache()
+
+            print(f"[概念库] 同花顺API刷新成功: {len(concept_map)}个概念")
             return concept_map
-            
+
         except Exception as e:
-            print(f"[概念库] 刷新失败，使用模拟数据: {e}")
-            return self._get_mock_concepts()
+            print(f"[概念库] 刷新失败: {e}")
+            return {}
     
     def _to_ts_code(self, code: str) -> str:
         """转换股票代码为ts_code格式"""
         if '.' in code:
             return code
-        if code.startswith('6'):
+        elif code.startswith('6'):
             return f"{code}.SH"
         else:
             return f"{code}.SZ"
     
-    def _get_mock_concepts(self) -> Dict[str, List[str]]:
-        """获取模拟概念库"""
-        return {
-            "人工智能": ["002230.SZ", "002410.SZ", "000977.SZ", "300454.SZ"],
-            "脑机接口": ["300775.SZ", "688066.SH", "002382.SZ"],
-            "新能源车": ["300750.SZ", "002594.SZ", "002460.SZ"],
-            "半导体": ["002371.SZ", "688981.SH", "688012.SH"],
-            "白酒": ["600519.SH", "000858.SZ", "000568.SZ"],
-            "医药生物": ["002382.SZ", "300122.SZ", "000538.SZ"],
-            "游戏": ["002555.SZ", "002624.SZ", "002558.SZ"],
-            "5G": ["000063.SZ", "000733.SZ", "002396.SZ"],
-            "区块链": ["002537.SZ", "300468.SZ", "002657.SZ"],
-            "元宇宙": ["002624.SZ", "300031.SZ", "002555.SZ"],
-            "ChatGPT": ["002230.SZ", "300454.SZ", "002410.SZ"],
-            "算力": ["000977.SZ", "002368.SZ", "603019.SH"],
-            "光伏": ["601012.SH", "002129.SZ", "300274.SZ"],
-            "储能": ["300750.SZ", "002074.SZ", "002709.SZ"],
-            "氢能源": ["000723.SZ", "002639.SZ", "300228.SZ"]
-        }
+    def _save_cache(self, concept_map: Dict[str, List[str]]):
+        """保存概念库到缓存"""
+        try:
+            cache_data = {
+                'timestamp': datetime.now().timestamp(),
+                'data': concept_map
+            }
+            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+            with open(self.cache_path, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[概念库] 保存缓存失败: {e}")
     
-    def find_concept_stocks(self, keyword: str) -> Dict[str, List[str]]:
-        """
-        根据关键词查找相关概念及其成分股
-        返回: {匹配的概念名: [股票代码列表]}
-        """
-        if not self._concept_map:
-            self.refresh_concepts()
-        
-        matched = {}
-        keyword_lower = keyword.lower()
-        
-        # 精确匹配和模糊匹配
-        for concept_name, stocks in self._concept_map.items():
-            # 精确匹配
-            if keyword in concept_name or concept_name in keyword:
-                matched[concept_name] = stocks
-            # 模糊匹配（关键词相似）
-            elif self._is_similar(keyword_lower, concept_name.lower()):
-                matched[concept_name] = stocks
-        
-        return matched
-    
-    def _is_similar(self, keyword: str, concept: str) -> bool:
-        """判断关键词和概念是否相似"""
-        # 简单的相似度判断
-        similar_map = {
-            "ai": ["人工智能", "智能", "机器学习", "深度学习"],
-            "脑机": ["脑机接口", "bci", "神经接口"],
-            "新能源": ["新能源车", "电动车", "锂电池", "储能"],
-            "芯片": ["半导体", "集成电路", "芯片"],
-            "酒": ["白酒", "啤酒", "葡萄酒"],
-            "医药": ["医药生物", "生物医药", "创新药", "中药"],
-            "游戏": ["游戏", "手游", "网游", "电竞"],
-            "5g": ["5g", "通信", "基站"],
-            "元宇宙": ["元宇宙", "vr", "ar", "虚拟现实"],
-            "gpt": ["chatgpt", "大模型", "生成式ai"],
+    def find_stocks_by_concept(self, concept_keyword: str) -> List[str]:
+        """根据概念关键词查找股票 - 改进版精确匹配"""
+        concept_map = self.get_all_concepts()
+        matched_stocks = []
+        keyword_lower = concept_keyword.lower()
+
+        # 定义概念映射规则 - 更精确的映射
+        concept_mappings = {
+            "脑机": ["脑科学", "脑机接口"],  # 更精确的脑机概念
+            "脑机接口": ["脑科学", "脑机接口"],
+            "新能源车": ["新能源汽车", "特斯拉", "充电桩", "锂电池"],
+            "芯片": ["芯片概念", "集成电路", "半导体", "芯片设计"],
+            "人工智能": ["人工智能", "AI", "机器学习", "AIGC"],
+            "区块链": ["区块链", "数字货币", "NFT"],
+            "光伏": ["光伏", "太阳能", "HJT电池"],
+            "储能": ["储能", "储能技术", "电化学储能"]
         }
-        
-        for key, values in similar_map.items():
-            if key in keyword:
-                for v in values:
-                    if v in concept:
-                        return True
-        
-        return False
+
+        # 1. 首先尝试精确映射
+        target_concepts = concept_mappings.get(keyword_lower, [keyword_lower])
+
+        # 2. 匹配概念名称
+        for concept_name, stocks in concept_map.items():
+            concept_name_lower = concept_name.lower()
+
+            # 精确匹配或目标概念匹配
+            if any(target in concept_name_lower for target in target_concepts):
+                matched_stocks.extend(stocks)
+                continue
+
+            # 避免错误匹配 - 排除不相关概念
+            if keyword_lower == "脑机" and "人脑工程" in concept_name_lower:
+                continue  # 跳过人脑工程，避免误匹配制药公司
+
+            # 普通包含匹配
+            if keyword_lower in concept_name_lower:
+                matched_stocks.extend(stocks)
+
+        # 去重并返回
+        return list(set(matched_stocks))
     
-    def extract_concepts_from_news(self, news_text: str) -> Set[str]:
-        """
-        从新闻文本中提取概念关键词
-        返回: 概念关键词集合
-        """
-        concepts = set()
+    def get_stock_concepts(self, ts_code: str) -> List[str]:
+        """获取股票所属的概念"""
+        concept_map = self.get_all_concepts()
+        concepts = []
         
-        if not self._concept_map:
-            self.refresh_concepts()
-        
-        # 遍历所有概念，查找在新闻中出现的
-        for concept_name in self._concept_map.keys():
-            if concept_name in news_text:
-                concepts.add(concept_name)
-        
-        # 额外的关键词提取规则
-        keywords_map = {
-            "人工智能": ["AI", "人工智能", "机器学习", "深度学习", "神经网络"],
-            "脑机接口": ["脑机", "BCI", "脑电", "神经接口", "马斯克"],
-            "新能源车": ["新能源", "电动车", "特斯拉", "比亚迪", "理想", "蔚来"],
-            "半导体": ["芯片", "半导体", "晶圆", "光刻", "封测"],
-            "元宇宙": ["元宇宙", "VR", "AR", "虚拟现实", "增强现实"],
-            "储能": ["储能", "电池", "锂电", "钠电池"],
-        }
-        
-        for concept, keywords in keywords_map.items():
-            for kw in keywords:
-                if kw in news_text:
-                    concepts.add(concept)
-                    break
+        for concept_name, stocks in concept_map.items():
+            if ts_code in stocks:
+                concepts.append(concept_name)
         
         return concepts
-    
-    def get_hot_concepts(self, limit: int = 10) -> List[Dict]:
-        """
-        获取热门概念
-        返回: [{name: 概念名, stock_count: 成分股数量}]
-        """
-        if not self._concept_map:
-            self.refresh_concepts()
-        
-        hot_concepts = []
-        for name, stocks in self._concept_map.items():
-            hot_concepts.append({
-                'name': name,
-                'stock_count': len(stocks)
-            })
-        
-        # 按成分股数量排序
-        hot_concepts.sort(key=lambda x: x['stock_count'], reverse=True)
-        return hot_concepts[:limit]
 
-# 单例模式
+    def search_concepts(self, keyword: str) -> List[str]:
+        """搜索包含关键词的概念，返回概念名称列表"""
+        concept_map = self.get_all_concepts()
+        matched_concepts = []
+        keyword_lower = keyword.lower()
+
+        for concept_name in concept_map.keys():
+            if keyword_lower in concept_name.lower():
+                matched_concepts.append(concept_name)
+
+        return matched_concepts
+
+# 全局实例
 _concept_manager = None
 
 def get_concept_manager() -> ConceptManager:
-    """获取概念管理器单例"""
+    """获取全局概念管理器实例"""
     global _concept_manager
     if _concept_manager is None:
         _concept_manager = ConceptManager()

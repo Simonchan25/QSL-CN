@@ -26,13 +26,14 @@ export default function App() {
   
   // 个股分析状态
   const [name, setName] = useState('贵州茅台')
-  const [force, setForce] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [data, setData] = useState(null)
-  const [error, setError] = useState('')
-  const [progress, setProgress] = useState([])
-  const [showTerminal, setShowTerminal] = useState(false)
-  const [logLines, setLogLines] = useState([])
+  const [force, setForce] = useState(true)  // 默认强制刷新，获取最新数据
+  // 专业版报告状态
+  const [proLoading, setProLoading] = useState(false)
+  const [proError, setProError] = useState('')
+  const [proReport, setProReport] = useState(null)
+  const [analyzeProgress, setAnalyzeProgress] = useState('')  // 新增：分析进度
+  const [analyzePercent, setAnalyzePercent] = useState(0)  // 新增：进度百分比
+  const [dataFetchDetails, setDataFetchDetails] = useState([])  // 新增：数据抓取详情
   const [history, setHistory] = useState(() => {
     try { return JSON.parse(localStorage.getItem('qsl_history')||'[]') } catch { return [] }
   })
@@ -47,109 +48,246 @@ export default function App() {
   const [hotspotLoading, setHotspotLoading] = useState(false)
   const [hotspotData, setHotspotData] = useState(null)
   const [hotspotError, setHotspotError] = useState('')
+  const [hotspotProgress, setHotspotProgress] = useState(0)  // 进度百分比
+  const [hotspotProgressMsg, setHotspotProgressMsg] = useState('')  // 进度消息
 
   // 报告系统状态
   const [currentReport, setCurrentReport] = useState(null)
-  const [reportType, setReportType] = useState('morning')
+  // 移除reportType状态，简化为固定的morning类型
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState('')
+  const [reportProgress, setReportProgress] = useState(0)
+  const [reportProgressText, setReportProgressText] = useState('')
 
   const formatProgress = (d) => {
     const s = d?.step || ''
     const p = d?.payload || {}
-    if (s === 'resolve:start') return `开始解析：${p.input || ''}`
-    if (s === 'resolve:done') return `解析成功：${p.base?.name || ''}${p.base?.ts_code ? `（${p.base.ts_code}）` : ''}`
-    if (s === 'fetch:parallel:start') return `开始抓取：${p.ts_code || ''}`
-    if (s === 'fetch:parallel:done') return `抓取完成：价格${p.px_rows ?? 0}行，基本面${(p.fundamental_keys||[]).length}项，宏观${(p.macro_keys||[]).length}项`
-    if (s === 'compute:technical') return `技术面：收盘${p.tech_last_close ?? '-'}，RSI${p.tech_last_rsi ?? '-'}，MACD${p.tech_last_macd ?? '-'}，信号${p.tech_signal || '-'}`
-    if (s === 'fetch:announcements') return `公告条数：${p.count ?? 0}`
-    if (s === 'compute:news_sentiment') return `新闻情绪：正面${p.percentages?.positive ?? 0}% 中性${p.percentages?.neutral ?? 0}% 负面${p.percentages?.negative ?? 0}%（整体${p.overall || '-' }）`
-    if (s === 'compute:scorecard') return `评分：总分${p.score_total ?? '-'}（基本面${p.score_fundamental ?? '-'} 技术${p.score_technical ?? '-'} 宏观${p.score_macro ?? '-' }）`
-    if (s === 'llm:summary:start') return '生成 LLM 总结...'
-    if (s === 'llm:summary:done') return `LLM 总结完成（长度 ${p.length ?? 0}）`
-    return s ? `步骤：${s}` : ''
+
+    // 创建详细的数据对象
+    const detail = {
+      step: s,
+      timestamp: new Date().toLocaleTimeString(),
+      data: null,
+      type: 'info' // info, success, data
+    }
+
+    // 如果有进度百分比，优先使用描述
+    if (p.progress_desc) {
+      detail.message = p.progress_desc
+      return detail
+    }
+
+    // 根据不同步骤返回详细信息
+    if (s === 'resolve:start') {
+      detail.message = `🔍 开始解析：${p.input || ''}`
+      detail.type = 'info'
+    } else if (s === 'resolve:done') {
+      detail.message = `✅ 解析成功：${p.base?.name || ''}（${p.base?.ts_code || ''}）`
+      detail.type = 'success'
+      detail.data = { name: p.base?.name, code: p.base?.ts_code }
+    } else if (s === 'fetch:parallel:start') {
+      detail.message = `📊 开始抓取数据：${p.ts_code || ''}`
+      detail.type = 'info'
+    } else if (s === 'fetch:parallel:done') {
+      detail.message = `✅ 数据抓取完成`
+      detail.type = 'data'
+      detail.data = {
+        prices: `价格数据 ${p.px_rows ?? 0} 条`,
+        fundamental: `基本面 ${(p.fundamental_keys||[]).length} 项`,
+        macro: `宏观数据 ${(p.macro_keys||[]).length} 项`
+      }
+    } else if (s === 'compute:technical') {
+      detail.message = `📈 技术指标计算完成`
+      detail.type = 'data'
+      detail.data = {
+        close: `收盘价 ${p.tech_last_close ?? '-'}`,
+        rsi: `RSI ${p.tech_last_rsi ?? '-'}`,
+        macd: `MACD ${p.tech_last_macd ?? '-'}`,
+        signal: p.tech_signal || '-'
+      }
+    } else if (s === 'fetch:announcements') {
+      detail.message = `📢 公告获取完成：${p.count ?? 0} 条`
+      detail.type = 'data'
+      detail.data = { count: p.count }
+    } else if (s === 'compute:news_sentiment') {
+      detail.message = `📰 新闻情绪分析完成`
+      detail.type = 'data'
+      detail.data = {
+        positive: `正面 ${p.percentages?.positive ?? 0}%`,
+        neutral: `中性 ${p.percentages?.neutral ?? 0}%`,
+        negative: `负面 ${p.percentages?.negative ?? 0}%`,
+        overall: p.overall || '-'
+      }
+    } else if (s === 'compute:scorecard') {
+      detail.message = `💯 综合评分计算完成`
+      detail.type = 'data'
+      detail.data = {
+        total: `总分 ${p.score_total ?? '-'}/100`,
+        fundamental: `基本面 ${p.score_fundamental ?? '-'}`,
+        technical: `技术面 ${p.score_technical ?? '-'}`,
+        macro: `宏观 ${p.score_macro ?? '-'}`
+      }
+    } else if (s === 'llm:summary:start') {
+      detail.message = '🤖 AI正在生成分析报告...'
+      detail.type = 'info'
+    } else if (s === 'llm:summary:done') {
+      detail.message = `✅ AI分析报告生成完成`
+      detail.type = 'success'
+      detail.data = { length: p.length ?? 0 }
+    } else if (s === 'complete') {
+      detail.message = '🎉 分析完成！'
+      detail.type = 'success'
+    } else {
+      detail.message = s ? `⚙️ ${s}` : ''
+      detail.type = 'info'
+    }
+
+    return detail
   }
 
   const analyze = async () => {
-    setError(''); setLoading(true); setData(null)
-    setProgress([]); setLogLines([]); setShowTerminal(true)
-
-    const logs = new EventSource(getApiUrl('/logs/stream'))
-    logs.addEventListener('log', (ev) => {
-      try { const d = JSON.parse(ev.data || '{}'); if (d.line) setLogLines(ls => [...ls, d.line].slice(-300)) } catch {}
-    })
-    logs.addEventListener('error', () => { try { logs.close() } catch {} })
-
+    setProError('')
+    setProLoading(true)
+    setProReport(null)
+    setAnalyzeProgress('')  // 清空进度
+    setAnalyzePercent(0)  // 重置进度百分比
+    setDataFetchDetails([])  // 清空数据抓取详情
+    
     const url = getApiUrl(`/analyze/stream?name=${encodeURIComponent(name)}&force=${force}`)
-    const maxRetry = 3
-    const retryDelay = 800
     let ended = false
     let captured = null
-
-    const fallbackOnce = async () => {
-      setProgress(p => [...p, '[warn] SSE 失败，改用一次性请求'])
+    
+    // 降级到非流式接口的函数
+    const fallback = async () => {
+      console.log('Fallback to HTTP API called')
       try {
-        const res = await fetch(getApiUrl('/analyze'), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, force })
-        })
-        if (!res.ok) throw new Error(await res.text())
-        const j = await res.json(); captured = j; setData(j)
+        const fallbackUrl = getApiUrl(`/analyze/professional?name=${encodeURIComponent(name)}&force=${force}`)
+        console.log('Fallback URL:', fallbackUrl)
+        const res = await fetch(fallbackUrl)
+        if (!res.ok) {
+          const errorText = await res.text()
+          console.log('Fallback API error:', res.status, errorText)
+          throw new Error(errorText || '获取专业报告失败')
+        }
+        const reportData = await res.json()
+        console.log('Fallback API success, data keys:', Object.keys(reportData))
+        setProReport(reportData)
+
+        // Save to history
         try {
-          const item = { name, at: Date.now(), data: j }
+          const item = { name, at: Date.now(), data: reportData }
           const filtered = history.filter(h => h.name !== name)
-          const next = [item, ...filtered].slice(0,50)
+          const next = [item, ...filtered].slice(0, 50)
           setHistory(next)
           localStorage.setItem('qsl_history', JSON.stringify(next))
+          console.log('Saved to history')
         } catch {}
       } catch (e) {
-        const msg = String(e)
-        setError(msg.includes('TypeError') ? '网络/后端暂不可达（可能在重启），请稍后重试' : msg)
+        console.log('Fallback failed:', e)
+        setProError(String(e))
       } finally {
-        setLoading(false)
+        setProLoading(false)
       }
     }
-
-    const startSse = (attempt = 0) => {
+    
+    try {
+      console.log('Starting SSE connection to:', url)
       const es = new EventSource(url)
+
+      // 处理进度事件
       es.addEventListener('progress', (ev) => {
-        try { const d = JSON.parse(ev.data || '{}'); const line = formatProgress(d); if (line) setProgress(p => [...p, line].slice(-200)) } catch {}
-      })
-      es.addEventListener('result', (ev) => {
-        try { const d = JSON.parse(ev.data || '{}'); if (d && Object.keys(d).length){ setData(d); captured = d } } catch {}
-      })
-      es.addEventListener('end', () => {
-        ended = true
-        try { es.close() } catch {}
-        setLoading(false)
-        setTimeout(()=> setShowTerminal(false), 1500)
         try {
-          const item = { name, at: Date.now(), data: captured }
-          const filtered = history.filter(h => h.name !== name)
-          const next = [item, ...filtered].slice(0,50)
-          setHistory(next)
-          localStorage.setItem('qsl_history', JSON.stringify(next))
+          const d = JSON.parse(ev.data || '{}')
+          const progressDetail = formatProgress(d)
+
+          if (progressDetail && progressDetail.message) {
+            setAnalyzeProgress(progressDetail.message)
+
+            // 添加到数据抓取详情列表
+            setDataFetchDetails(prev => {
+              const newDetails = [...prev, progressDetail]
+              // 最多保留最近20条记录
+              return newDetails.slice(-20)
+            })
+          }
+
+          // 更新进度百分比
+          if (d?.payload?.progress_percent !== undefined) {
+            setAnalyzePercent(d.payload.progress_percent)
+          }
         } catch {}
       })
-      es.addEventListener('error', () => {
-        if (ended) return
-        try { es.close() } catch {}
-        if (attempt + 1 <= maxRetry) {
-          const nextAttempt = attempt + 1
-          setProgress(p => [...p, `[info] SSE 重试 #${nextAttempt}`])
-          setTimeout(()=> startSse(nextAttempt), retryDelay * nextAttempt)
-        } else {
-          fallbackOnce()
+      
+      // 处理结果事件
+      es.addEventListener('result', (ev) => {
+        try {
+          const d = JSON.parse(ev.data || '{}')
+          if (d && Object.keys(d).length) {
+            setProReport(d)
+            captured = d
+            
+            // Save to history
+            try {
+              const item = { name, at: Date.now(), data: d }
+              const filtered = history.filter(h => h.name !== name)
+              const next = [item, ...filtered].slice(0, 50)
+              setHistory(next)
+              localStorage.setItem('qsl_history', JSON.stringify(next))
+            } catch {}
+          }
+        } catch {}
+      })
+      
+      // 处理错误事件
+      es.addEventListener('error', (ev) => {
+        console.log('SSE Error Event:', ev)
+        if (!ended) {
+          es.close()
+          ended = true
+          console.log('SSE failed, falling back to HTTP API')
+          if (!captured) {
+            fallback()
+          } else {
+            setProLoading(false)
+          }
         }
       })
+      
+      // 处理结束事件
+      es.addEventListener('end', () => {
+        es.close()
+        ended = true
+        setProLoading(false)
+      })
+      
+      // 超时保护
+      setTimeout(() => {
+        if (!ended) {
+          es.close()
+          ended = true
+          if (!captured) {
+            fallback()
+          } else {
+            setProLoading(false)
+          }
+        }
+      }, 120000) // 2分钟超时
+      
+    } catch (e) {
+      // EventSource 不支持时降级
+      console.log('EventSource initialization failed:', e)
+      fallback()
     }
-
-    startSse(0)
   }
+
+  
 
   const analyzeHotspot = async () => {
     setHotspotError('')
     setHotspotLoading(true)
     setHotspotData(null)
+    setHotspotProgress(0)
+    setHotspotProgressMsg('开始分析...')
     
     const url = getApiUrl(`/hotspot/stream?keyword=${encodeURIComponent(hotspotKeyword)}&force=${force}`)
     let ended = false
@@ -181,6 +319,20 @@ export default function App() {
     }
     
     const es = new EventSource(url)
+
+    // 处理进度事件
+    es.addEventListener('progress', (ev) => {
+      try {
+        const d = JSON.parse(ev.data || '{}')
+        if (d.progress !== undefined) {
+          setHotspotProgress(d.progress)
+        }
+        if (d.message) {
+          setHotspotProgressMsg(d.message)
+        }
+      } catch {}
+    })
+
     es.addEventListener('result', (ev) => {
       try {
         const d = JSON.parse(ev.data || '{}')
@@ -216,16 +368,15 @@ export default function App() {
   const loadReport = async (type) => {
     setReportLoading(true)
     setReportError('')
-    setReportType(type)
     
     try {
       const res = await fetch(getApiUrl(`/reports/${type}`))
       if (res.ok) {
-        const report = await res.json()
-        setCurrentReport(report)
+        const data = await res.json()
+        setCurrentReport(data.report)
         setActiveTab('reports')
       } else if (res.status === 404) {
-        setReportError(`暂无${type === 'morning' ? '早' : type === 'noon' ? '午' : '晚'}报`)
+        setReportError('暂无报告')
       } else {
         setReportError('加载报告失败')
       }
@@ -239,19 +390,62 @@ export default function App() {
   const generateReport = async (type) => {
     setReportLoading(true)
     setReportError('')
-    
+    setReportProgress(0)
+    setReportProgressText('开始生成报告...')
+
+    // 模拟进度条更新
+    const progressSteps = [
+      { progress: 10, text: '正在获取市场数据...' },
+      { progress: 25, text: '分析重大事件...' },
+      { progress: 40, text: '分析热点板块...' },
+      { progress: 55, text: '监控异动股票...' },
+      { progress: 70, text: '分析资金流向...' },
+      { progress: 85, text: '生成AI智能总结...' },
+      { progress: 95, text: '正在保存报告...' },
+      { progress: 100, text: '报告生成完成！' }
+    ]
+
+    let currentStep = 0
+    const progressInterval = setInterval(() => {
+      if (currentStep < progressSteps.length) {
+        const step = progressSteps[currentStep]
+        setReportProgress(step.progress)
+        setReportProgressText(step.text)
+        currentStep++
+      } else {
+        clearInterval(progressInterval)
+      }
+    }, 10000) // 每10秒更新一步，总共约80秒
+
     try {
-      const res = await fetch(getApiUrl(`/reports/${type}/generate`), {
+      const res = await fetch(getApiUrl(`/reports/${type}`), {
         method: 'POST'
       })
+
       if (res.ok) {
-        // 等待3秒后自动加载
-        setTimeout(() => loadReport(type), 3000)
-        setReportError('报告生成中，请稍候...')
+        // 确保进度条完成
+        setReportProgress(100)
+        setReportProgressText('报告生成完成！')
+        clearInterval(progressInterval)
+
+        // 直接使用生成的报告数据
+        const data = await res.json()
+        setTimeout(() => {
+          setCurrentReport(data.report)
+          setActiveTab('reports')
+          setReportProgress(0)
+          setReportProgressText('')
+        }, 1000)
       } else {
+        clearInterval(progressInterval)
+        setReportProgress(0)
+        setReportProgressText('')
         setReportError('生成报告失败')
       }
     } catch (e) {
+      clearInterval(progressInterval)
+      setReportProgress(0)
+      setReportProgressText('')
       setReportError('网络错误')
     } finally {
       setReportLoading(false)
@@ -260,31 +454,17 @@ export default function App() {
   
   const loadHistory = async (h) => {
     try {
-      setError('')
-      setShowTerminal(false)
-      setProgress([]); setLogLines([])
+      setProError('')
       setName(h.name)
-      setSidebarOpen(false) // 选择历史记录后关闭侦边栏
+      setSidebarOpen(false)
       if (h && h.data && Object.keys(h.data).length) {
-        setData(h.data)
+        setProReport(h.data)
         return
       }
-      setLoading(true)
-      const res = await fetch(getApiUrl('/analyze'), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: h.name, force: false })
-      })
-      if (!res.ok) throw new Error(await res.text())
-      const j = await res.json()
-      setData(j)
-      try {
-        const updated = (history||[]).map(x => x.name===h.name ? { ...x, data: j } : x)
-        setHistory(updated)
-        localStorage.setItem('qsl_history', JSON.stringify(updated))
-      } catch {}
+      // If history item has no data, re-analyze
+      await analyze()
     } catch (e) {
-      setError(String(e))
-    } finally {
-      setLoading(false)
+      setProError(String(e))
     }
   }
 
@@ -342,7 +522,6 @@ export default function App() {
           
           {/* 移动端市场概览按钮 */}
           <button className="mobile-market-button" onClick={() => {
-            console.log('Market button clicked, current state:', marketOverviewOpen)
             setMarketOverviewOpen(!marketOverviewOpen)
           }} aria-label="市场概览">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -404,19 +583,23 @@ export default function App() {
                         <span>强制刷新</span>
                       </label>
                     </div>
-                    <button className="search-button" onClick={analyze} disabled={loading}>
-                      {loading ? <><span className="spinner"></span> 分析中...</> : '开始分析'}
+                    <button className="search-button" onClick={analyze} disabled={proLoading}>
+                      {proLoading ? <><span className="spinner"></span> 分析中...</> : '开始分析'}
                     </button>
-                    {loading && (
+                    {proLoading && (
                       <div className="progress-bar-container">
                         <div className="progress-bar">
-                          <div className="progress-bar-fill"></div>
+                          <div 
+                            className="progress-bar-fill" 
+                            style={{ width: `${analyzePercent}%` }}
+                          ></div>
+                          <span className="progress-percent">{analyzePercent}%</span>
                         </div>
-                        <div className="progress-text">正在分析，请稍候...</div>
+                        <div className="progress-text">{analyzeProgress || '正在生成专业报告，请稍候...'}</div>
                       </div>
                     )}
                   </div>
-                  {error && <div className="error-message">{error}</div>}
+                  {proError && <div className="error-message">{proError}</div>}
                 </div>
                 
                 <div className="sidebar-section">
@@ -448,76 +631,83 @@ export default function App() {
                       placeholder="输入股票名称或代码" 
                       onKeyDown={(e) => e.key === 'Enter' && !loading && analyze()}
                     />
-                    <button className="search-button" onClick={analyze} disabled={loading}>
-                      {loading ? <><span className="spinner"></span> 分析中...</> : '开始分析'}
+                    <button className="search-button" onClick={analyze} disabled={proLoading}>
+                      {proLoading ? <><span className="spinner"></span> 分析中...</> : '开始分析'}
                     </button>
                   </div>
                 </div>
                 
-                {!data && !loading && !showTerminal && (
-                  <div className="empty-analysis">
-                    <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16,6L18.29,8.29L13.41,13.17L9.41,9.17L2,16.59L3.41,18L9.41,12L13.41,16L19.71,9.71L22,12V6H16Z"/></svg> 等待分析</h3>
-                    <p>请在左侧输入股票名称或代码，点击"开始分析"</p>
-                  </div>
-                )}
-
-                {showTerminal && (
-                  <div className="terminal-card">
-                    <div className="terminal-header">
-                      <span className="terminal-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20,3H4A1,1 0 0,0 3,4V20A1,1 0 0,0 4,21H20A1,1 0 0,0 21,20V4A1,1 0 0,0 20,3M20,20H4V5H20V20Z"/><path d="M6 7H8V9H6V7M10 7H18V9H10V7M6 11H8V13H6V11M10 11H18V13H10V11M6 15H8V17H6V15M10 15H18V17H10V15Z"/></svg> 实时分析进度</span>
-                      <button className="terminal-close" onClick={() => setShowTerminal(false)}>×</button>
-                    </div>
-                    <div className="terminal-body">
-                      {progress.map((ln, i)=> (
-                        <div key={i} className="terminal-line progress-line">
-                          <span className="line-prefix">▶</span>{ln}
+                {/* 显示数据抓取进度 */}
+                {proLoading && dataFetchDetails.length > 0 && (
+                  <div className="data-fetch-progress">
+                    <h3>📊 数据抓取进度</h3>
+                    <div className="fetch-details-container">
+                      {dataFetchDetails.map((detail, index) => (
+                        <div key={index} className={`fetch-detail-item ${detail.type}`}>
+                          <span className="fetch-time">{detail.timestamp}</span>
+                          <span className="fetch-message">{detail.message}</span>
+                          {detail.data && (
+                            <div className="fetch-data">
+                              {typeof detail.data === 'object' ? (
+                                Object.entries(detail.data).map(([key, value]) => (
+                                  <span key={key} className="data-item">
+                                    {typeof value === 'string' ? value : `${key}: ${value}`}
+                                  </span>
+                                ))
+                              ) : (
+                                <span>{detail.data}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {data && (
-                  <div className="results-container">
-                    <div className="result-card basic-info">
-                      <h3 className="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M9,17H7V10H9V17M13,17H11V7H13V17M17,17H15V13H17V17Z"/></svg> 基本信息</h3>
-                      <div className="info-grid">
-                        <div className="info-item">
-                          <span className="info-label">股票名称</span>
-                          <span className="info-value">{data.basic?.name || '-'}</span>
-                        </div>
-                        <div className="info-item">
-                          <span className="info-label">股票代码</span>
-                          <span className="info-value">{data.basic?.ts_code || data.basic?.symbol || '-'}</span>
-                        </div>
-                      </div>
-                    </div>
+                {!proReport && !proLoading && (
+                  <div className="empty-analysis">
+                    <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16,6L18.29,8.29L13.41,13.17L9.41,9.17L2,16.59L3.41,18L9.41,12L13.41,16L19.71,9.71L22,12V6H16Z"/></svg> 等待分析</h3>
+                    <p>请在左侧输入股票名称或代码，点击"开始分析"</p>
+                  </div>
+                )}
 
-                    <div className="result-card llm-summary">
-                      <h3 className="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z"/></svg> QSL-AI 智能分析</h3>
-                      <div className="llm-content markdown-content">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {data.llm_summary || '暂无QSL-AI分析'}
-                        </ReactMarkdown>
-                      </div>
-                    </div>
+                
 
-                    <div className="result-card scorecard">
-                      <h3 className="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M22,21H2V3H4V19H6V17H10V19H12V16H16V19H18V17H22V21M18,14H22V16H18V14M12,6H16V15H12V6M6,10H10V16H6V10M4,13H2V15H4V13Z"/></svg> 综合评分</h3>
-                      <div className="score-grid">
-                        <div className="score-item total">
-                          <span className="score-label">总分</span>
-                          <span className="score-value">{data.scorecard?.score_total ?? '-'}</span>
-                        </div>
-                        <div className="score-item">
-                          <span className="score-label">基本面</span>
-                          <span className="score-value">{data.scorecard?.score_fundamental ?? '-'}</span>
-                        </div>
-                        <div className="score-item">
-                          <span className="score-label">技术面</span>
-                          <span className="score-value">{data.scorecard?.score_technical ?? '-'}</span>
-                        </div>
-                      </div>
+                
+
+                {/* 专业版报告展示 */}
+                {proReport?.text && (
+                  <div className="result-card llm-summary">
+                    <h3 className="card-title">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
+                        <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2z"/>
+                      </svg>
+                      单股专业报告
+                    </h3>
+                    <div className="llm-content markdown-content">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {proReport.text}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                )}
+
+                {/* 专业版评分快照 */}
+                {proReport?.json?.scoring && (
+                  <div className="result-card">
+                    <h3 className="card-title">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
+                        <path d="M12 2L2 7v6c0 5 3.8 9.7 10 13 6.2-3.3 10-8 10-13V7l-10-5zM12 20.7C7.6 18.2 5 14.7 5 11.5V8.3l7-3.5 7 3.5v3.2c0 3.2-2.6 6.7-7 9.2z"/>
+                      </svg>
+                      专业评分（可解释）
+                    </h3>
+                    <div className="scores-grid">
+                      <div className="score-item total"><span className="score-label">总分</span><span className="score-value">{proReport.score?.total ?? '-'}/100</span></div>
+                      <div className="score-item"><span className="score-label">技术(40分)</span><span className="score-value">{proReport.score?.details?.technical ? Math.round(proReport.score.details.technical * 0.4) : '-'}/40</span></div>
+                      <div className="score-item"><span className="score-label">新闻(35分)</span><span className="score-value">{proReport.score?.details?.news ? Math.round(proReport.score.details.news * 0.35) : '-'}/35</span></div>
+                      <div className="score-item"><span className="score-label">基本面(20分)</span><span className="score-value">{proReport.score?.details?.fundamental ? Math.round(proReport.score.details.fundamental * 0.2) : '-'}/20</span></div>
+                      <div className="score-item"><span className="score-label">市场(5分)</span><span className="score-value">{proReport.score?.details?.market ? Math.round(proReport.score.details.market * 0.05) : '-'}/5</span></div>
                     </div>
                   </div>
                 )}
@@ -556,6 +746,22 @@ export default function App() {
                     <button className="search-button" onClick={analyzeHotspot} disabled={hotspotLoading}>
                       {hotspotLoading ? <><span className="spinner"></span> 分析中...</> : '分析热点'}
                     </button>
+                    {hotspotLoading && hotspotProgress > 0 && (
+                      <div className="progress-container" style={{marginTop: '10px', width: '100%'}}>
+                        <div className="progress-bar-wrapper" style={{width: '100%', height: '20px', backgroundColor: '#f0f0f0', borderRadius: '10px', overflow: 'hidden', border: '1px solid #ddd'}}>
+                          <div className="progress-bar" style={{
+                            width: `${hotspotProgress}%`,
+                            height: '100%',
+                            backgroundColor: '#4caf50',
+                            transition: 'width 0.3s ease',
+                            background: 'linear-gradient(90deg, #4caf50, #66bb6a)'
+                          }}></div>
+                        </div>
+                        <div className="progress-text" style={{marginTop: '5px', fontSize: '12px', color: '#666', textAlign: 'center'}}>
+                          {hotspotProgress}% - {hotspotProgressMsg}
+                        </div>
+                      </div>
+                    )}
                     {hotspotLoading && (
                       <div className="progress-bar-container">
                         <div className="progress-bar">
@@ -605,6 +811,22 @@ export default function App() {
                     <button className="search-button" onClick={analyzeHotspot} disabled={hotspotLoading}>
                       {hotspotLoading ? <><span className="spinner"></span> 分析中...</> : '分析热点'}
                     </button>
+                    {hotspotLoading && hotspotProgress > 0 && (
+                      <div className="progress-container" style={{marginTop: '10px', width: '100%'}}>
+                        <div className="progress-bar-wrapper" style={{width: '100%', height: '20px', backgroundColor: '#f0f0f0', borderRadius: '10px', overflow: 'hidden', border: '1px solid #ddd'}}>
+                          <div className="progress-bar" style={{
+                            width: `${hotspotProgress}%`,
+                            height: '100%',
+                            backgroundColor: '#4caf50',
+                            transition: 'width 0.3s ease',
+                            background: 'linear-gradient(90deg, #4caf50, #66bb6a)'
+                          }}></div>
+                        </div>
+                        <div className="progress-text" style={{marginTop: '5px', fontSize: '12px', color: '#666', textAlign: 'center'}}>
+                          {hotspotProgress}% - {hotspotProgressMsg}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -712,7 +934,7 @@ export default function App() {
                           </table>
                           
                           {/* 移动端卡片列表 */}
-                          <div className="mobile-stock-cards" style={{display: 'none'}}>
+                          <div className="mobile-stock-cards">
                             {(hotspotData?.stocks || []).map((stock, i) => (
                               <div key={i} className="mobile-stock-card">
                                 <span className="stock-rank">#{i + 1}</span>
@@ -753,69 +975,31 @@ export default function App() {
                     </svg>
                     报告管理
                   </h3>
-                  <div className="report-buttons">
-                    <button className="report-button morning" onClick={() => loadReport('morning')} disabled={reportLoading}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '6px', verticalAlign: 'middle'}}>
-                        <path d="M9,10H7V12H9V10M13,10H11V12H13V10M17,10H15V12H17V10M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/>
-                      </svg>
-                      查看早报
-                    </button>
-                    <button className="report-button noon" onClick={() => loadReport('noon')} disabled={reportLoading}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '6px', verticalAlign: 'middle'}}>
-                        <path d="M3,12H7A5,5 0 0,1 12,7A5,5 0 0,1 17,12H21A1,1 0 0,1 22,13A1,1 0 0,1 21,14H3A1,1 0 0,1 2,13A1,1 0 0,1 3,12M5,16H19A1,1 0 0,1 20,17A1,1 0 0,1 19,18H5A1,1 0 0,1 4,17A1,1 0 0,1 5,16M17,20A1,1 0 0,1 18,21A1,1 0 0,1 17,22H7A1,1 0 0,1 6,21A1,1 0 0,1 7,20H17Z"/>
-                      </svg>
-                      查看午报
-                    </button>
-                    <button className="report-button evening" onClick={() => loadReport('evening')} disabled={reportLoading}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '6px', verticalAlign: 'middle'}}>
-                        <path d="M17.75,4.09L15.22,6.03L16.13,9.09L13.5,7.28L10.87,9.09L11.78,6.03L9.25,4.09L12.44,4L13.5,1L14.56,4L17.75,4.09M21.25,11L19.61,12.25L20.2,14.23L18.5,13.06L16.8,14.23L17.39,12.25L15.75,11L17.81,10.95L18.5,9L19.19,10.95L21.25,11M18.97,15.95C19.8,15.87 20.69,17.05 20.16,17.8C19.84,18.25 19.5,18.67 19.08,19.07C15.17,23 8.84,23 4.94,19.07C1.03,15.17 1.03,8.83 4.94,4.93C5.34,4.53 5.76,4.17 6.21,3.85C6.96,3.32 8.14,4.21 8.06,5.04C7.79,7.9 8.75,10.87 10.95,13.06C13.14,15.26 16.1,16.22 18.97,15.95M17.33,17.97C14.5,17.81 11.7,16.64 9.53,14.5C7.36,12.31 6.2,9.5 6.04,6.68C3.23,9.82 3.34,14.64 6.35,17.66C9.37,20.67 14.19,20.78 17.33,17.97Z"/>
-                      </svg>
-                      查看晚报
-                    </button>
-                  </div>
                   <div className="report-generate">
-                    <div className="report-type-selector">
-                      <span className="selector-label">选择报告类型：</span>
-                      <div className="type-buttons">
-                        <button 
-                          className={`type-button ${reportType === 'morning' ? 'active' : ''}`}
-                          onClick={() => setReportType('morning')}
-                          disabled={reportLoading}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37c-.39-.39-1.03-.39-1.41 0-.39.39-.39 1.03 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0 .39-.39.39-1.03 0-1.41l-1.06-1.06zm1.06-10.96c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36c.39-.39.39-1.03 0-1.41-.39-.39-1.03-.39-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>
-                          </svg>
-                          早报
-                        </button>
-                        <button 
-                          className={`type-button ${reportType === 'noon' ? 'active' : ''}`}
-                          onClick={() => setReportType('noon')}
-                          disabled={reportLoading}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M3,12H7A5,5 0 0,1 12,7A5,5 0 0,1 17,12H21A1,1 0 0,1 22,13A1,1 0 0,1 21,14H3A1,1 0 0,1 2,13A1,1 0 0,1 3,12M5,16H19A1,1 0 0,1 20,17A1,1 0 0,1 19,18H5A1,1 0 0,1 4,17A1,1 0 0,1 5,16M17,20A1,1 0 0,1 18,21A1,1 0 0,1 17,22H7A1,1 0 0,1 6,21A1,1 0 0,1 7,20H17Z"/>
-                          </svg>
-                          午报
-                        </button>
-                        <button 
-                          className={`type-button ${reportType === 'evening' ? 'active' : ''}`}
-                          onClick={() => setReportType('evening')}
-                          disabled={reportLoading}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M17.75,4.09L15.22,6.03L16.13,9.09L13.5,7.28L10.87,9.09L11.78,6.03L9.25,4.09L12.44,4L13.5,1L14.56,4L17.75,4.09M21.25,11L19.61,12.25L20.2,14.23L18.5,13.06L16.8,14.23L17.39,12.25L15.75,11L17.81,10.95L18.5,9L19.19,10.95L21.25,11M18.97,15.95C19.8,15.87 20.69,17.05 20.16,17.8C19.84,18.25 19.5,18.67 19.08,19.07C15.17,23 8.84,23 4.94,19.07C1.03,15.17 1.03,8.83 4.94,4.93C5.34,4.53 5.76,4.17 6.21,3.85C6.96,3.32 8.14,4.21 8.06,5.04C7.79,7.9 8.75,10.87 10.95,13.06C13.14,15.26 16.1,16.22 18.97,15.95M17.33,17.97C14.5,17.81 11.7,16.64 9.53,14.5C7.36,12.31 6.2,9.5 6.04,6.68C3.23,9.82 3.34,14.64 6.35,17.66C9.37,20.67 14.19,20.78 17.33,17.97Z"/>
-                          </svg>
-                          晚报
-                        </button>
-                      </div>
-                    </div>
-                    <button className="generate-button" onClick={() => generateReport(reportType)} disabled={reportLoading}>
+                    <button className="generate-button" onClick={() => generateReport('morning')} disabled={reportLoading}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '6px'}}>
                         <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>
                       </svg>
-                      生成{reportType === 'morning' ? '早' : reportType === 'noon' ? '午' : '晚'}报
+                      生成市场报告
                     </button>
                   </div>
+
+                  {/* 进度条组件 */}
+                  {reportLoading && reportProgress > 0 && (
+                    <div className="report-progress-container">
+                      <div className="progress-text-header">{reportProgressText}</div>
+                      <div className="progress-bar-container">
+                        <div className="progress-bar">
+                          <div
+                            className="progress-bar-fill"
+                            style={{width: `${reportProgress}%`}}
+                          ></div>
+                        </div>
+                        <div className="progress-percentage">{reportProgress}%</div>
+                      </div>
+                    </div>
+                  )}
+
                   {reportError && <div className="error-message">{reportError}</div>}
                 </div>
                 
@@ -828,45 +1012,42 @@ export default function App() {
                   <div className="report-container">
                     <div className="report-header">
                       <h2>
-                        {currentReport.type === 'morning' ? (
-                          <>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
-                              <path d="M9,10H7V12H9V10M13,10H11V12H13V10M17,10H15V12H17V10M19,3H18V1H16V3H8V1H6V3H5C3.89,3 3,3.9 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M19,19H5V8H19V19Z"/>
-                            </svg>
-                            早报
-                          </>
-                        ) : currentReport.type === 'noon' ? (
-                          <>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
-                              <path d="M3,12H7A5,5 0 0,1 12,7A5,5 0 0,1 17,12H21A1,1 0 0,1 22,13A1,1 0 0,1 21,14H3A1,1 0 0,1 2,13A1,1 0 0,1 3,12M5,16H19A1,1 0 0,1 20,17A1,1 0 0,1 19,18H5A1,1 0 0,1 4,17A1,1 0 0,1 5,16M17,20A1,1 0 0,1 18,21A1,1 0 0,1 17,22H7A1,1 0 0,1 6,21A1,1 0 0,1 7,20H17Z"/>
-                            </svg>
-                            午报
-                          </>
-                        ) : (
-                          <>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
-                              <path d="M17.75,4.09L15.22,6.03L16.13,9.09L13.5,7.28L10.87,9.09L11.78,6.03L9.25,4.09L12.44,4L13.5,1L14.56,4L17.75,4.09M21.25,11L19.61,12.25L20.2,14.23L18.5,13.06L16.8,14.23L17.39,12.25L15.75,11L17.81,10.95L18.5,9L19.19,10.95L21.25,11M18.97,15.95C19.8,15.87 20.69,17.05 20.16,17.8C19.84,18.25 19.5,18.67 19.08,19.07C15.17,23 8.84,23 4.94,19.07C1.03,15.17 1.03,8.83 4.94,4.93C5.34,4.53 5.76,4.17 6.21,3.85C6.96,3.32 8.14,4.21 8.06,5.04C7.79,7.9 8.75,10.87 10.95,13.06C13.14,15.26 16.1,16.22 18.97,15.95M17.33,17.97C14.5,17.81 11.7,16.64 9.53,14.5C7.36,12.31 6.2,9.5 6.04,6.68C3.23,9.82 3.34,14.64 6.35,17.66C9.37,20.67 14.19,20.78 17.33,17.97Z"/>
-                            </svg>
-                            晚报
-                          </>
-                        )} - {currentReport.date}
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
+                          <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                        </svg>
+                        市场报告 - {currentReport.date}
                       </h2>
                       <span className="report-time">
-                        生成时间：{new Date(currentReport.generated_at).toLocaleString()}
+                        生成时间：{(() => {
+                          if (!currentReport?.generated_at) return '未知'
+                          try {
+                            return new Date(currentReport.generated_at).toLocaleString('zh-CN', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })
+                          } catch (e) {
+                            console.error('Date parsing error:', e)
+                            return '日期格式错误'
+                          }
+                        })()}
                       </span>
                     </div>
 
                     {/* 专业总结 */}
-                    {currentReport.professional_summary && (
+                    {(currentReport.professional_summary || currentReport.ai_summary) && (
                       <div className="report-section">
                         <h3>
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '8px', verticalAlign: 'middle'}}>
                             <path d="M22,21H2V3H4V19H6V10H10V19H12V6H16V19H18V14H22V21Z"/>
                           </svg>
-                          专业总结
+                          {currentReport.type === 'comprehensive_market' ? 'AI智能分析' : '专业总结'}
                         </h3>
                         <div className="summary-content">
-                          {currentReport.professional_summary.split('\n').map((line, i) => (
+                          {(currentReport.professional_summary || currentReport.ai_summary || '').split('\n').map((line, i) => (
                             <p key={i}>{line}</p>
                           ))}
                         </div>
@@ -1074,9 +1255,7 @@ export default function App() {
           )}
 
           {/* 右侧今日大盘 - 桌面端固定显示，移动端模态框 */}
-          <aside className={`right-sidebar ${marketOverviewOpen ? 'mobile-active' : ''}`} style={{
-            border: marketOverviewOpen ? '2px solid red' : '2px solid blue'
-          }}>
+          <aside className={`right-sidebar ${marketOverviewOpen ? 'mobile-active' : ''}`}>
             {/* 移动端关闭按钮 */}
             <button className="mobile-close-button" onClick={() => setMarketOverviewOpen(false)}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -1087,6 +1266,33 @@ export default function App() {
           </aside>
         </div>
       </div>
+      {/* 移动端底部导航 */}
+      <nav className="bottom-nav" aria-label="主导航">
+        <button
+          className={`bottom-nav-item ${activeTab === 'stock' ? 'active' : ''}`}
+          onClick={() => setActiveTab('stock')}
+          aria-label="个股分析"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 3v18h18v-2H5V3H3zm4 14h2v-6H7v6zm4 0h2V9h-2v8zm4 0h2v-4h-2v4z"/></svg>
+          <span>个股</span>
+        </button>
+        <button
+          className={`bottom-nav-item ${activeTab === 'hotspot' ? 'active' : ''}`}
+          onClick={() => setActiveTab('hotspot')}
+          aria-label="热点概念"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.28 2.97-.2 4.18-.72 1.83-2.33 3.04-4.01 3.66z"/></svg>
+          <span>热点</span>
+        </button>
+        <button
+          className={`bottom-nav-item ${activeTab === 'reports' ? 'active' : ''}`}
+          onClick={() => setActiveTab('reports')}
+          aria-label="市场报告"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg>
+          <span>报告</span>
+        </button>
+      </nav>
       <FloatingChat />
     </div>
   )

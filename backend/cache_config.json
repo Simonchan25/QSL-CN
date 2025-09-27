@@ -1,0 +1,8 @@
+{
+  "market_data_ttl": 300,
+  "stock_data_ttl": 180,
+  "news_data_ttl": 600,
+  "concurrent_limit": 2,
+  "timeout_seconds": 30,
+  "enable_smart_cache": true
+}

@@ -118,13 +118,6 @@ def analyze_margin_trading(ts_code: str) -> Dict[str, Any]:
 
 def analyze_northbound_flow() -> Dict[str, Any]:
     """分析北向资金流向"""
-    today = dt.date.today().strftime("%Y%m%d")
-    
-    hsgt = moneyflow_hsgt(trade_date=today)
-    if hsgt.empty:
-        # 获取最近的数据
-        hsgt = moneyflow_hsgt()
-    
     result = {
         "has_data": False,
         "hgt_net": None,  # 沪股通净流入
@@ -132,6 +125,21 @@ def analyze_northbound_flow() -> Dict[str, Any]:
         "total_net": None,  # 总净流入
         "north_signal": []
     }
+    
+    try:
+        # 获取最近几天的数据，不指定具体日期
+        end_date = dt.date.today().strftime("%Y%m%d")
+        start_date = (dt.date.today() - dt.timedelta(days=7)).strftime("%Y%m%d")
+        
+        hsgt = moneyflow_hsgt(start_date=start_date, end_date=end_date)
+        if hsgt.empty:
+            # 如果还是空，尝试更大的时间范围
+            start_date = (dt.date.today() - dt.timedelta(days=15)).strftime("%Y%m%d")
+            hsgt = moneyflow_hsgt(start_date=start_date, end_date=end_date)
+    except Exception as e:
+        # 如果API失败，返回空数据
+        print(f"Warning: 北向资金数据获取失败: {e}")
+        return result
     
     if hsgt is not None and not hsgt.empty:
         hsgt = hsgt.sort_values("trade_date", ascending=False).reset_index(drop=True)

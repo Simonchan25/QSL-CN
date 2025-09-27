@@ -17,12 +17,14 @@ def fetch_macro_snapshot() -> Dict[str, Any]:
         latest = _cpi.iloc[0]
         out["cpi_latest"] = {
             "month": latest.get("month"),
-            "cpi": latest.get("cpi"),
-            "cpi_yoy": latest.get("cpi_yoy"),
-            "cpi_mom": latest.get("cpi_mom"),
+            "cpi": latest.get("nt_val"),
+            "cpi_yoy": latest.get("nt_yoy"),
+            "cpi_mom": latest.get("nt_mom"),
         }
         # 近6个月趋势
         if len(_cpi) >= 6:
+            # 重命名列以保持兼容性
+            _cpi["cpi_yoy"] = _cpi["nt_yoy"]
             out["cpi_trend"] = _cpi.head(6)[["month", "cpi_yoy"]].to_dict(orient="records")
 
     # PPI数据
@@ -83,18 +85,18 @@ def fetch_macro_snapshot() -> Dict[str, Any]:
     # PMI数据
     _pmi = cn_pmi()
     if not _pmi.empty:
-        _pmi = _pmi.sort_values("month", ascending=False).reset_index(drop=True)
+        _pmi = _pmi.sort_values("MONTH", ascending=False).reset_index(drop=True)
         latest = _pmi.iloc[0]
         out["pmi_latest"] = {
-            "month": latest.get("month"),
-            "pmi": latest.get("pmi"),
-            "pmi_mfg": latest.get("pmi_mfg"),      # 制造业PMI
-            "pmi_non_mfg": latest.get("pmi_non_mfg"), # 非制造业PMI
+            "month": latest.get("MONTH"),
+            "pmi": latest.get("PMI010000"),  # 制造业PMI
+            "pmi_mfg": latest.get("PMI010000"),      # 制造业PMI
+            "pmi_non_mfg": latest.get("PMI030000"), # 非制造业PMI
         }
         # PMI景气判断
-        if latest.get("pmi_mfg"):
+        if latest.get("PMI010000"):
             try:
-                pmi_val = float(latest.get("pmi_mfg"))
+                pmi_val = float(latest.get("PMI010000"))
                 if pmi_val >= 50:
                     out["pmi_signal"] = "扩张区间"
                 else:

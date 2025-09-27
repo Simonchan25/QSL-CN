@@ -1,8 +1,8 @@
 /* Floating Chat Component Styles */
 .floating-chat-button {
   position: fixed;
-  bottom: 30px;
-  right: 30px;
+  bottom: calc(20px + var(--safe-bottom));
+  right: calc(20px + var(--safe-right));
   width: 60px;
   height: 60px;
   border-radius: 50%;
@@ -15,7 +15,7 @@
   justify-content: center;
   color: white;
   transition: all 0.3s;
-  z-index: 1000;
+  z-index: 1100;
 }
 
 .floating-chat-button:hover {
@@ -37,8 +37,8 @@
 
 .floating-chat-container {
   position: fixed;
-  bottom: 30px;
-  right: 30px;
+  bottom: calc(20px + var(--safe-bottom));
+  right: calc(20px + var(--safe-right));
   width: 380px;
   height: 600px;
   background: #232937;
@@ -46,7 +46,7 @@
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
   display: flex;
   flex-direction: column;
-  z-index: 1000;
+  z-index: 1100;
   transition: all 0.3s;
   border: 1px solid #30363d;
 }
@@ -80,7 +80,7 @@
 }
 
 .chat-control-btn {
-  background: rgba(255,255,255,0.2);
+  background: rgba(30, 40, 50, 0.7);
   border: none;
   border-radius: 4px;
   width: 28px;
@@ -94,11 +94,11 @@
 }
 
 .chat-control-btn:hover {
-  background: rgba(255,255,255,0.3);
+  background: rgba(30, 40, 50, 0.8);
 }
 
 .chat-control-btn.close:hover {
-  background: rgba(255,107,107,0.8);
+  background: rgba(220, 80, 80, 0.8);
 }
 
 .chat-messages {
@@ -293,17 +293,17 @@
 }
 
 /* Responsive Design */
-@media (max-width: 480px) {
+@media (max-width: 768px) {
   .floating-chat-container {
-    width: calc(100vw - 20px);
-    height: calc(100vh - 100px);
-    right: 10px;
-    bottom: 10px;
+    width: calc(100vw - 16px - var(--safe-left) - var(--safe-right));
+    height: calc(100dvh - 80px - var(--safe-top) - var(--safe-bottom) - 56px);
+    right: calc(8px + var(--safe-right));
+    bottom: calc(8px + var(--safe-bottom) + 56px);
   }
   
   .floating-chat-button {
-    right: 20px;
-    bottom: 20px;
+    right: calc(12px + var(--safe-right));
+    bottom: calc(12px + var(--safe-bottom) + 56px);
     width: 50px;
     height: 50px;
   }

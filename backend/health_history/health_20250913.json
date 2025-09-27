@@ -1,0 +1,112 @@
+[
+  {
+    "timestamp": "2025-09-13T21:05:00.848379",
+    "checks": [
+      {
+        "service": "tushare",
+        "status": "healthy",
+        "message": "API响应正常 (0.94s)",
+        "response_time": 0.944,
+        "details": {
+          "rows_returned": 1
+        },
+        "timestamp": "2025-09-13T21:04:57.980575"
+      },
+      {
+        "service": "ollama",
+        "status": "unhealthy",
+        "message": "服务检查失败: attempted relative import beyond top-level package",
+        "response_time": 0.0,
+        "details": {
+          "error": "attempted relative import beyond top-level package"
+        },
+        "timestamp": "2025-09-13T21:04:57.980600"
+      },
+      {
+        "service": "cache",
+        "status": "healthy",
+        "message": "缓存系统正常",
+        "response_time": 0.001,
+        "details": {},
+        "timestamp": "2025-09-13T21:04:57.982026"
+      },
+      {
+        "service": "network",
+        "status": "healthy",
+        "message": "网络连接正常",
+        "response_time": 2.866,
+        "details": {
+          "endpoints": [
+            {
+              "name": "百度",
+              "status": 200,
+              "time": 0.536339
+            },
+            {
+              "name": "TuShare",
+              "status": 200,
+              "time": 1.642035
+            }
+          ]
+        },
+        "timestamp": "2025-09-13T21:05:00.848300"
+      }
+    ],
+    "duration": 3.8122880458831787
+  },
+  {
+    "timestamp": "2025-09-13T21:05:00.866430",
+    "checks": [
+      {
+        "service": "tushare",
+        "status": "healthy",
+        "message": "API响应正常 (0.88s)",
+        "response_time": 0.88,
+        "details": {
+          "rows_returned": 1
+        },
+        "timestamp": "2025-09-13T21:04:57.916125"
+      },
+      {
+        "service": "ollama",
+        "status": "unhealthy",
+        "message": "服务检查失败: attempted relative import beyond top-level package",
+        "response_time": 0.0,
+        "details": {
+          "error": "attempted relative import beyond top-level package"
+        },
+        "timestamp": "2025-09-13T21:04:57.916157"
+      },
+      {
+        "service": "cache",
+        "status": "healthy",
+        "message": "缓存系统正常",
+        "response_time": 0.002,
+        "details": {},
+        "timestamp": "2025-09-13T21:04:57.918474"
+      },
+      {
+        "service": "network",
+        "status": "healthy",
+        "message": "网络连接正常",
+        "response_time": 2.948,
+        "details": {
+          "endpoints": [
+            {
+              "name": "百度",
+              "status": 200,
+              "time": 0.596471
+            },
+            {
+              "name": "TuShare",
+              "status": 200,
+              "time": 1.654155
+            }
+          ]
+        },
+        "timestamp": "2025-09-13T21:05:00.866321"
+      }
+    ],
+    "duration": 3.830549955368042
+  }
+]
