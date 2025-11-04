@@ -7,6 +7,13 @@ import time
 from datetime import datetime
 
 from .cache_manager import cache_manager, cache_stock_data
+from .chart_generator import (
+    generate_kline_svg,
+    generate_price_predictions,
+    calculate_prediction_accuracy,
+    generate_prediction_table,
+    embed_chart_in_markdown
+)
 
 
 def run_pipeline_optimized(
@@ -146,8 +153,10 @@ def run_pipeline_optimized(
 
     result['score'] = _calculate_score(result)
 
-    # 4. 生成摘要
-    result['summary'] = _generate_summary(result)
+    # 4. 生成摘要和预测数据
+    summary, predictions = _generate_summary(result)
+    result['summary'] = summary
+    result['predictions'] = predictions
 
     # 保存缓存
     cache_key = f"analysis_{ts_code}_{datetime.now().strftime('%Y%m%d')}"
@@ -159,8 +168,79 @@ def run_pipeline_optimized(
 
 @cache_stock_data(ttl=60)  # 缩短到1分钟缓存，提高实时性
 def _fetch_technical_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
-    """获取技术数据（带缓存）"""
+    """获取技术数据（带缓存）- 优先使用专业版"""
     try:
+        # 优先尝试使用专业版技术指标
+        from .enhanced_technical_analysis import fetch_enhanced_technical_data
+
+        print(f"[技术数据] 尝试使用专业版技术指标分析 {stock_name}({ts_code})")
+        pro_result = fetch_enhanced_technical_data(ts_code, stock_name, use_pro=True)
+
+        if pro_result and pro_result.get('status') == 'success' and pro_result.get('use_pro'):
+            print(f"[技术数据] 成功使用专业版分析")
+
+            # 转换为原有格式以保持兼容性
+            result = {
+                'prices': pro_result.get('prices', []),
+                'price': {},
+                'latest_price': pro_result.get('latest_price', 0),
+                'indicators': {},
+                'trend': 'unknown',
+                'pro_indicators': pro_result.get('pro_indicators', {}),
+                'trend_analysis': pro_result.get('trend_analysis', {}),
+                'entry_exit': pro_result.get('entry_exit', {}),
+                'signals': pro_result.get('signals', [])
+            }
+
+            # 提取价格信息
+            if pro_result.get('prices'):
+                latest = pro_result['prices'][0]
+                result['price'] = {
+                    'close': latest.get('close', 0),
+                    'open': latest.get('open', 0),
+                    'high': latest.get('high', 0),
+                    'low': latest.get('low', 0),
+                    'change': latest.get('pct_change', 0),
+                    'volume': latest.get('volume', 0),
+                    'amount': latest.get('amount', 0),
+                    'turnover_rate': latest.get('turnover_rate', 0),
+                    'trade_date': latest.get('date', '')
+                }
+
+            # 提取技术指标到indicators字段
+            if pro_result.get('indicators'):
+                indicators = pro_result['indicators']
+                # 如果是专业版格式，提取关键指标
+                if isinstance(indicators, dict) and 'price_action' in indicators:
+                    result['indicators'] = {
+                        'comprehensive_score': indicators.get('comprehensive_score', 50),
+                        'signals': indicators.get('technical_signals', []),
+                        'market_valuation': indicators.get('market_valuation', {})
+                    }
+                else:
+                    result['indicators'] = indicators
+
+            # 添加专业版独有数据
+            if pro_result.get('pro_indicators'):
+                pro_ind = pro_result['pro_indicators']
+                result['indicators'].update({
+                    'PE_TTM': pro_ind.get('市场估值', {}).get('pe_ttm'),
+                    'PB': pro_ind.get('市场估值', {}).get('pb'),
+                    'DIVIDEND_YIELD': pro_ind.get('市场估值', {}).get('dividend_yield'),
+                    'TREND': pro_ind.get('主趋势', ''),
+                    'TREND_STRENGTH': pro_ind.get('趋势强度', 0),
+                    'ACTION': pro_ind.get('建议操作', '观望'),
+                    'COMPREHENSIVE_SCORE': pro_ind.get('综合评分', 50)
+                })
+
+                # 添加支撑阻力位
+                if pro_ind.get('支撑阻力'):
+                    result['support_resistance'] = pro_ind['支撑阻力']
+
+            return result
+
+        # 如果专业版失败，回退到普通版
+        print(f"[技术数据] 专业版不可用，使用普通版计算")
         from .indicators import compute_indicators
         from .tushare_client import daily, daily_basic
 
@@ -170,15 +250,32 @@ def _fetch_technical_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
         start_date = (datetime.now() - timedelta(days=180)).strftime('%Y%m%d')
         df = daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
         if df is None or df.empty:
-            return {}
+            print(f"[技术数据] 警告: {stock_name}({ts_code}) 价格数据获取失败")
+            # 返回默认结构，但标记数据缺失
+            return {
+                'error': '价格数据获取失败',
+                'prices': [],
+                'indicators': {},
+                'price': {},
+                'latest_price': 0,
+                'trend': 'unknown'
+            }
 
-        # 获取最新的每日指标
+        # 获取最新的每日指标（尝试多个日期以应对T+1延迟）
+        latest_basic = {}
         try:
-            latest_daily_basic = daily_basic(ts_code=ts_code, trade_date=end_date)
-            if latest_daily_basic is not None and not latest_daily_basic.empty:
-                latest_basic = latest_daily_basic.iloc[0].to_dict()
-            else:
-                latest_basic = {}
+            # 由于T+1延迟，尝试最近几个交易日的数据
+            from datetime import timedelta
+            for days_ago in range(5):  # 尝试最近5天
+                check_date = (datetime.now() - timedelta(days=days_ago)).strftime('%Y%m%d')
+                latest_daily_basic = daily_basic(ts_code=ts_code, trade_date=check_date)
+                if latest_daily_basic is not None and not latest_daily_basic.empty:
+                    latest_basic = latest_daily_basic.iloc[0].to_dict()
+                    print(f"[技术数据] 获取到daily_basic数据 ({check_date}): PE={latest_basic.get('pe_ttm', 0):.2f}")
+                    break
+
+            if not latest_basic:
+                print(f"[技术数据] 警告: 最近5天都没有daily_basic数据")
         except Exception as e:
             print(f"[技术数据] 获取daily_basic失败: {e}")
             latest_basic = {}
@@ -217,6 +314,7 @@ def _fetch_technical_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
             'amount': float(latest.get('amount', 0)) * 1000,  # 转换为元
             'turnover_rate': float(latest_basic.get('turnover_rate', 0)) if latest_basic and 'turnover_rate' in latest_basic else 0,
             'pe_ttm': float(latest_basic.get('pe_ttm', 0)) if latest_basic and 'pe_ttm' in latest_basic else 0,
+            'pb': float(latest_basic.get('pb', 0)) if latest_basic and 'pb' in latest_basic else 0,
             'volume_ratio': float(latest_basic.get('volume_ratio', 0)) if latest_basic and 'volume_ratio' in latest_basic else 0,
             'trade_date': str(latest.get('trade_date', ''))
         }
@@ -239,13 +337,23 @@ def _fetch_technical_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
             'prices': prices,  # 添加prices字段供前端使用
             'price': price_info,
             'latest_price': float(latest['close']),  # 添加latest_price字段
+            'latest_price_info': price_info,  # 完整的价格信息(含PE/PB)
             'indicators': indicators,
             'trend': _analyze_trend(df),
             'latest_basic': latest_basic if isinstance(latest_basic, dict) else {}
         }
     except Exception as e:
         print(f"[技术数据] 错误: {e}")
-        return {}
+        import traceback
+        traceback.print_exc()
+        return {
+            'error': str(e),
+            'prices': [],
+            'indicators': {},
+            'price': {},
+            'latest_price': 0,
+            'trend': 'unknown'
+        }
 
 
 @cache_stock_data(ttl=300)  # 缩短到5分钟缓存
@@ -259,12 +367,17 @@ def _fetch_fundamental_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
         # 获取基础基本面数据
         fundamental_data = fetch_fundamentals(ts_code) or {}
 
-        # 获取最新的每日基本面指标
-        today = datetime.now().strftime('%Y%m%d')
-        latest_basic = daily_basic(ts_code=ts_code, trade_date=today)
-        if latest_basic is not None and not latest_basic.empty:
-            latest = latest_basic.iloc[0]
+        # 获取最新的每日基本面指标（尝试多个日期以应对T+1延迟）
+        from datetime import timedelta
+        latest = None
+        for days_ago in range(5):  # 尝试最近5天
+            check_date = (datetime.now() - timedelta(days=days_ago)).strftime('%Y%m%d')
+            latest_basic = daily_basic(ts_code=ts_code, trade_date=check_date)
+            if latest_basic is not None and not latest_basic.empty:
+                latest = latest_basic.iloc[0]
+                break
 
+        if latest is not None:
             # 将PE、PB等指标直接添加到fina_indicator_latest中，确保前端能获取
             if 'fina_indicator_latest' not in fundamental_data:
                 fundamental_data['fina_indicator_latest'] = {}
@@ -272,6 +385,7 @@ def _fetch_fundamental_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
             # 更新PE、PB到财务指标中（优先使用daily_basic的实时数据）
             pe_value = float(latest.get('pe_ttm', 0)) if 'pe_ttm' in latest else None
             pb_value = float(latest.get('pb', 0)) if 'pb' in latest else None
+            ps_value = float(latest.get('ps_ttm', 0)) if 'ps_ttm' in latest else None
 
             if pe_value and pe_value > 0:
                 fundamental_data['fina_indicator_latest']['pe'] = pe_value
@@ -279,6 +393,9 @@ def _fetch_fundamental_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
 
             if pb_value and pb_value > 0:
                 fundamental_data['fina_indicator_latest']['pb'] = pb_value
+
+            if ps_value and ps_value > 0:
+                fundamental_data['fina_indicator_latest']['ps_ttm'] = ps_value
 
             # 保留其他每日指标
             fundamental_data['latest_daily'] = {
@@ -334,10 +451,32 @@ def _fetch_news_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
                 'enhanced_sentiment': sentiment_result  # 同时提供两个字段确保兼容性
             }
 
-        return news_data
+        # 即使没有新闻,也返回默认的情绪结构
+        print(f"[新闻] 警告: {stock_name}({ts_code}) 未获取到新闻数据")
+        return {
+            'matched_news': [],
+            'stats': {},
+            'summary': {},
+            'timestamp': '',
+            'sentiment': {
+                'overall': 'neutral',
+                'percentages': {'positive': 0, 'neutral': 100, 'negative': 0},
+                'news_count': 0
+            }
+        }
     except Exception as e:
         print(f"[新闻] 错误: {e}")
-        return {}
+        import traceback
+        traceback.print_exc()
+        return {
+            'error': str(e),
+            'matched_news': [],
+            'sentiment': {
+                'overall': 'neutral',
+                'percentages': {'positive': 0, 'neutral': 100, 'negative': 0},
+                'news_count': 0
+            }
+        }
 
 
 @cache_stock_data(ttl=600)  # 10分钟缓存
@@ -678,7 +817,8 @@ def _calculate_score(result: Dict) -> Dict[str, Any]:
     scores = {
         'technical': 0,      # 技术面（0-100）
         'fundamental': 0,    # 基本面（0-100）
-        'sentiment': 0,      # 情绪面（0-100）
+        'news': 0,           # 新闻面（0-100）- 改名以匹配前端
+        'market': 0,         # 市场面（0-100）- 新增市场评分
         'valuation': 0,      # 估值面（0-100）
         'growth': 0,         # 成长性（0-100）
         'quality': 0         # 质量面（0-100）
@@ -690,42 +830,61 @@ def _calculate_score(result: Dict) -> Dict[str, Any]:
     if tech:
         tech_points = 0
 
-        # RSI评分（30分）
-        rsi = tech.get('rsi')
-        if rsi:
-            if 40 <= rsi <= 60:
-                tech_points += 30  # 健康区间
-            elif 30 <= rsi < 40 or 60 < rsi <= 70:
-                tech_points += 20  # 偏离但可接受
-            elif 20 <= rsi < 30:
-                tech_points += 25  # 超卖反弹机会
-            elif 70 < rsi <= 80:
-                tech_points += 10  # 超买风险
-            elif rsi < 20:
-                tech_points += 35  # 深度超卖
-            else:  # rsi > 80
-                tech_points += 5   # 严重超买
+        # 从正确位置获取数据
+        indicators = tech.get('indicators', {})
+        prices = tech.get('prices', [])
+        latest_price = prices[0] if prices else {}
+        prev_price = prices[1] if len(prices) > 1 else {}
 
-        # 趋势评分（35分）
-        trend = tech.get('trend', 'unknown')
-        if trend == 'uptrend':
-            tech_points += 35
-        elif trend == 'sideways':
-            tech_points += 20
-        elif trend == 'downtrend':
-            tech_points += 5
+        # RSI评分（30分）
+        rsi = indicators.get('RSI', 50)
+        if 40 <= rsi <= 60:
+            tech_points += 30  # 健康区间
+        elif 30 <= rsi < 40 or 60 < rsi <= 70:
+            tech_points += 20  # 偏离但可接受
+        elif 20 <= rsi < 30:
+            tech_points += 25  # 超卖反弹机会
+        elif 70 < rsi <= 80:
+            tech_points += 10  # 超买风险
+        elif rsi < 20:
+            tech_points += 35  # 深度超卖
+        else:  # rsi > 80
+            tech_points += 5   # 严重超买
+
+        # 趋势评分（35分）- 基于均线判断
+        current_price = latest_price.get('close', 0)
+        ma5 = indicators.get('MA5', 0)
+        ma10 = indicators.get('MA10', 0)
+        ma20 = indicators.get('MA20', 0)
+
+        if current_price > 0 and ma5 > 0 and ma20 > 0:
+            if current_price > ma5 > ma20:  # 多头排列
+                tech_points += 35
+            elif current_price > ma20:  # 站上中期均线
+                tech_points += 25
+            elif ma5 > ma10 > ma20:  # 均线向上但价格未突破
+                tech_points += 20
+            elif current_price < ma5 < ma20:  # 空头排列
+                tech_points += 5
+            else:  # 震荡
+                tech_points += 15
 
         # MACD评分（20分）
-        macd_signal = tech.get('macd_signal', '')
-        if '金叉' in macd_signal or '多头' in macd_signal:
+        macd = indicators.get('MACD', 0)
+        dif = indicators.get('DIF', 0)
+        dea = indicators.get('DEA', 0)
+
+        if dif > dea and macd > 0:  # 金叉且在零轴上方
             tech_points += 20
-        elif '死叉' in macd_signal or '空头' in macd_signal:
+        elif dif > dea:  # 金叉
+            tech_points += 15
+        elif dif < dea and macd < 0:  # 死叉且在零轴下方
             tech_points += 5
-        else:
+        else:  # 其他情况
             tech_points += 10
 
         # 成交量评分（15分）
-        volume = tech.get('volume', 0)
+        volume = latest_price.get('amount', 0)
         if volume > 0:  # 有成交量数据
             tech_points += 15
         else:
@@ -792,8 +951,8 @@ def _calculate_score(result: Dict) -> Dict[str, Any]:
 
     scores['fundamental'] = fundamental_score
 
-    # 3. 情绪面评分（权重20%）
-    sentiment_score = 50  # 默认中性
+    # 3. 新闻面评分（权重35%）- 重命名为news以匹配前端
+    news_score = 50  # 默认中性
     news_data = result.get('news', {})
     if news_data and 'sentiment' in news_data:
         sentiment = news_data['sentiment']
@@ -803,11 +962,11 @@ def _calculate_score(result: Dict) -> Dict[str, Any]:
 
         # 基础情绪评分
         if overall == 'positive':
-            sentiment_score = 70
+            news_score = 70
         elif overall == 'negative':
-            sentiment_score = 30
+            news_score = 30
         else:
-            sentiment_score = 50
+            news_score = 50
 
         # 基于新闻分布调整
         if sentiment_pct:
@@ -815,58 +974,103 @@ def _calculate_score(result: Dict) -> Dict[str, Any]:
             neg_pct = sentiment_pct.get('negative', 0)
 
             if pos_pct > 60:
-                sentiment_score += 20
+                news_score += 20
             elif pos_pct > 40:
-                sentiment_score += 10
+                news_score += 10
 
             if neg_pct > 60:
-                sentiment_score -= 20
+                news_score -= 20
             elif neg_pct > 40:
-                sentiment_score -= 10
+                news_score -= 10
 
         # 新闻数量调整
         if news_count >= 10:
-            sentiment_score += 5  # 关注度高
+            news_score += 5  # 关注度高
         elif news_count <= 2:
-            sentiment_score -= 5  # 关注度低
+            news_score -= 5  # 关注度低
 
-        sentiment_score = min(100, max(0, sentiment_score))
+        news_score = min(100, max(0, news_score))
 
-    scores['sentiment'] = sentiment_score
+    scores['news'] = news_score
+
+    # 4. 市场面评分（权重5%）- 新增
+    market_score = 50  # 默认中性
+    market_data = result.get('market', {})
+    if market_data:
+        market_sentiment = market_data.get('market_sentiment', 'neutral')
+        stats = market_data.get('statistics', {})
+
+        # 基于市场情绪评分
+        if market_sentiment == '乐观':
+            market_score = 75
+        elif market_sentiment == '偏多':
+            market_score = 65
+        elif market_sentiment == '偏空':
+            market_score = 35
+        elif market_sentiment == '悲观':
+            market_score = 25
+        else:
+            market_score = 50
+
+        # 基于涨跌家数调整
+        rise = stats.get('rise_count', 0)
+        fall = stats.get('fall_count', 0)
+        if rise + fall > 0:
+            rise_ratio = rise / (rise + fall)
+            if rise_ratio > 0.7:
+                market_score += 10
+            elif rise_ratio < 0.3:
+                market_score -= 10
+
+        market_score = min(100, max(0, market_score))
+
+    scores['market'] = market_score
 
     # 4. 估值面评分（权重15%）
     valuation_score = 50  # 默认中性
-    if fundamental:
-        val_points = 0
+
+    # 尝试从technical.latest_price_info获取PE/PB (daily_basic接口)
+    latest_price_info = tech.get('latest_price_info', {}) if tech else {}
+    pe_ttm = latest_price_info.get('pe_ttm', 0)
+    pb = latest_price_info.get('pb', 0)
+
+    # 如果technical没有,再尝试从fundamental获取
+    if not pe_ttm and fundamental:
         latest_metrics = fundamental.get('fina_indicator_latest', {})
+        pe_ttm = latest_metrics.get('pe_ttm', 0) or latest_metrics.get('pe', 0)
+        pb = latest_metrics.get('pb_mrq', 0) or latest_metrics.get('pb', 0)
 
-        # PE评分（60分）
-        pe = latest_metrics.get('pe')
-        if pe and pe > 0:
-            if pe <= 10:
-                val_points += 60  # 低估
-            elif pe <= 15:
-                val_points += 50  # 合理偏低
-            elif pe <= 25:
-                val_points += 35  # 合理
-            elif pe <= 40:
-                val_points += 20  # 偏高
-            else:
-                val_points += 5   # 高估
+    val_points = 0
 
-        # PB评分（40分）
-        pb = latest_metrics.get('pb')
-        if pb and pb > 0:
-            if pb <= 1:
-                val_points += 40  # 破净
-            elif pb <= 2:
-                val_points += 30  # 合理
-            elif pb <= 3:
-                val_points += 20  # 偏高
-            else:
-                val_points += 10  # 高估
+    # PE评分（60分）
+    if pe_ttm and pe_ttm > 0:
+        if pe_ttm <= 10:
+            val_points += 60  # 低估
+        elif pe_ttm <= 15:
+            val_points += 50  # 合理偏低
+        elif pe_ttm <= 25:
+            val_points += 35  # 合理
+        elif pe_ttm <= 40:
+            val_points += 20  # 偏高
+        else:
+            val_points += 5   # 高估
+    else:
+        val_points += 25  # 无数据给中性分
 
-        valuation_score = min(100, max(0, val_points))
+    # PB评分（40分）
+    if pb and pb > 0:
+        if pb <= 1:
+            val_points += 40  # 破净
+        elif pb <= 2:
+            val_points += 30  # 合理
+        elif pb <= 3:
+            val_points += 20  # 偏高
+        else:
+            val_points += 10  # 高估
+    else:
+        val_points += 15  # 无数据给中性分
+
+    valuation_score = min(100, max(0, val_points))
 
     scores['valuation'] = valuation_score
 
@@ -898,17 +1102,32 @@ def _calculate_score(result: Dict) -> Dict[str, Any]:
 
     scores['quality'] = quality_score
 
-    # 加权综合评分
+    # 加权综合评分 - 重新调整以匹配前端显示(技术40+新闻35+基本面20+市场5=100)
     weights = {
-        'technical': 0.25,
-        'fundamental': 0.25,
-        'sentiment': 0.20,
-        'valuation': 0.15,
-        'growth': 0.10,
-        'quality': 0.05
+        'technical': 0.40,      # 技术面 40分
+        'news': 0.35,           # 新闻面 35分 (包含情绪分析)
+        'fundamental': 0.20,    # 基本面 20分
+        'market': 0.05,         # 市场面 5分
+        'valuation': 0.0,       # 估值并入基本面
+        'growth': 0.0,          # 成长性并入基本面
+        'quality': 0.0          # 质量并入基本面
     }
 
-    total = sum(scores[key] * weights[key] for key in scores.keys())
+    # 重新计算基本面评分(整合估值、成长、质量)
+    fundamental_combined = (
+        scores['fundamental'] * 0.50 +  # 原基本面占50%
+        scores['valuation'] * 0.30 +    # 估值占30%
+        scores['growth'] * 0.10 +       # 成长性占10%
+        scores['quality'] * 0.10        # 质量占10%
+    )
+    scores['fundamental'] = fundamental_combined
+
+    total = (
+        scores['technical'] * weights['technical'] +
+        scores['news'] * weights['news'] +
+        scores['fundamental'] * weights['fundamental'] +
+        scores['market'] * weights['market']
+    )
 
     return {
         'total': round(total, 1),
@@ -932,8 +1151,22 @@ def _get_rating(score: float) -> str:
         return "回避"
 
 
-def _generate_summary(result: Dict) -> str:
-    """生成RGTI风格的深度分析报告"""
+def _generate_summary(result: Dict) -> tuple[str, list]:
+    """生成RGTI风格的深度分析报告（增强版）
+
+    Returns:
+        tuple: (report_markdown, predictions_list)
+    """
+    from .professional_report_enhancer import (
+        enhance_technical_analysis,
+        enhance_fundamental_analysis,
+        enhance_valuation_analysis,
+        enhance_news_analysis,
+        enhance_risk_assessment,
+        generate_investment_strategy,
+        generate_enhanced_summary
+    )
+
     stock_name = result['basic']['name']
     ts_code = result['basic']['ts_code']
     score = result.get('score', {})
@@ -947,21 +1180,113 @@ def _generate_summary(result: Dict) -> str:
     sentiment = news_data.get('sentiment', {})
     market = result.get('market', {})
 
+    # 从正确的位置获取价格和技术指标数据
+    prices = technical.get('prices', [])
+    latest_price_info = prices[0] if prices else {}
+    prev_price_info = prices[1] if len(prices) > 1 else {}
+    indicators = technical.get('indicators', {})
+
+    # 优先使用latest_price字段,否则从prices[0]获取
+    current_price = result.get('latest_price') or latest_price_info.get('close', 0)
+
+    # 计算真实涨跌幅:如果pct_chg为0,则从前后两天价格计算
+    pct_change = latest_price_info.get('pct_chg', 0)
+    if pct_change == 0 and prev_price_info:
+        prev_close = prev_price_info.get('close', 0)
+        if prev_close > 0:
+            pct_change = ((current_price - prev_close) / prev_close) * 100
+
+    volume = latest_price_info.get('amount', 0)  # 成交额
+    trade_date = latest_price_info.get('trade_date', '')
+
+    # 从indicators获取技术指标
+    ma5 = indicators.get('MA5', 0)
+    ma10 = indicators.get('MA10', 0)
+    ma20 = indicators.get('MA20', 0)
+    rsi = indicators.get('RSI', 50)
+    macd = indicators.get('MACD', 0)
+    kdj_k = indicators.get('KDJ_K', 50)
+
     # 构建深度分析报告
     report_parts = []
+
+    # 初始化predictions（用于返回）
+    all_predictions = {'historical': [], 'future': []}
 
     # 标题
     report_parts.append(f"# {stock_name} 深度分析概览")
     report_parts.append("")
 
+    # 生成K线图和价格预测（如果有价格数据）
+    if prices and len(prices) >= 5:
+        try:
+            # 优先使用Kronos深度学习模型进行K线预测
+            print(f"[预测] 开始生成Kronos预测，股票代码: {ts_code}")
+            all_predictions = generate_price_predictions(
+                prices=prices,
+                stock_name=stock_name,
+                technical=technical,
+                fundamental=fundamental,
+                ts_code=ts_code,  # 传入ts_code以启用Kronos预测
+                use_kronos=True   # 明确启用Kronos预测
+            )
+
+            # 分离历史预测和未来预测
+            historical_preds = all_predictions.get('historical', [])
+            future_preds = all_predictions.get('future', [])
+            print(f"[预测] 预测完成: 历史{len(historical_preds)}条, 未来{len(future_preds)}条")
+
+            # 合并所有预测用于图表显示（历史+未来）
+            combined_preds = historical_preds + future_preds
+
+            # 生成K线SVG
+            kline_svg = generate_kline_svg(
+                prices=prices,
+                indicators=indicators,
+                stock_name=stock_name,
+                predictions=combined_preds if combined_preds else None
+            )
+
+            # 嵌入图表
+            if kline_svg:
+                chart_section = embed_chart_in_markdown(
+                    svg_data_url=kline_svg,
+                    caption=f"近60日K线走势 + 过去14天验证 + 未来10天Kronos AI深度预测"
+                )
+                report_parts.append(chart_section)
+                report_parts.append("")
+
+            # 如果有历史预测数据，添加预测准确度分析
+            if historical_preds:
+                accuracy_metrics = calculate_prediction_accuracy(historical_preds)
+                prediction_table = generate_prediction_table(historical_preds, accuracy_metrics)
+                if prediction_table:
+                    report_parts.append(prediction_table)
+                    report_parts.append("")
+
+        except Exception as e:
+            print(f"生成K线图时出错: {str(e)}")
+            # 继续生成报告，不因图表失败而中断
+
+    # 数据完整性警告
+    data_quality_warnings = []
+    if not prices or len(prices) == 0:
+        data_quality_warnings.append("⚠️ 价格数据获取失败，部分分析可能不准确")
+    if not indicators or len(indicators) == 0:
+        data_quality_warnings.append("⚠️ 技术指标数据缺失")
+    if not fundamental or len(fundamental) == 0:
+        data_quality_warnings.append("⚠️ 基本面数据不完整")
+    if not news_data or len(news_data) == 0:
+        data_quality_warnings.append("⚠️ 新闻数据暂无")
+
+    if data_quality_warnings:
+        report_parts.append("> **数据质量提示**：")
+        for warning in data_quality_warnings:
+            report_parts.append(f"> {warning}")
+        report_parts.append("")
+
     # 1. 近期行情与涨势亮点
     report_parts.append("## 1. 近期行情与涨势亮点")
-    current_price = technical.get('current_price', 0)
-    pct_change = technical.get('pct_change', 0)
-    trend = technical.get('trend', 'unknown')
-    volume = technical.get('volume', 0)
-    ma20 = technical.get('ma20', 0)
-    ma60 = technical.get('ma60', 0)
 
     # 生成更加生动的行情描述
     if current_price > 0:
@@ -996,12 +1321,12 @@ def _generate_summary(result: Dict) -> str:
             report_parts.append(f"**资金博弈**：{vol_desc}")
 
         # 均线系统分析
-        if ma20 > 0 and ma60 > 0:
-            if current_price > ma20 > ma60:
+        if ma5 > 0 and ma20 > 0:
+            if current_price > ma5 > ma20:
                 ma_desc = "股价强势站上所有均线，多头排列确立，上升通道完美打开"
             elif current_price > ma20:
-                ma_desc = "股价突破20日均线，短期趋势向好，有望挑战60日均线"
-            elif current_price < ma20 < ma60:
+                ma_desc = "股价突破20日均线，短期趋势向好"
+            elif current_price < ma5 < ma20:
                 ma_desc = "股价承压于均线系统，空头格局明显，建议观望等待企稳"
             else:
                 ma_desc = "股价在均线附近震荡，方向不明，需等待突破信号"
@@ -1010,26 +1335,36 @@ def _generate_summary(result: Dict) -> str:
         report_parts.append("**行情数据暂缺**")
 
     # 技术指标亮点
-    rsi = technical.get('rsi')
-    macd_signal = technical.get('macd_signal')
     tech_highlights = []
     if rsi:
         if rsi > 70:
-            tech_highlights.append("RSI超买区域，短期或面临调整压力")
+            tech_highlights.append(f"RSI={rsi:.1f}超买区域，短期或面临调整压力")
         elif rsi < 30:
-            tech_highlights.append("RSI超卖区域，可能存在反弹机会")
+            tech_highlights.append(f"RSI={rsi:.1f}超卖区域，可能存在反弹机会")
         else:
-            tech_highlights.append("RSI处于正常区间，技术形态相对健康")
+            tech_highlights.append(f"RSI={rsi:.1f}处于正常区间，技术形态相对健康")
 
-    if macd_signal:
-        tech_highlights.append(f"MACD信号：{macd_signal}")
+    if macd != 0:
+        if macd > 0:
+            tech_highlights.append(f"MACD金叉，多头信号")
+        else:
+            tech_highlights.append(f"MACD死叉，空头信号")
 
     if tech_highlights:
         report_parts.append("技术要点：" + "；".join(tech_highlights))
 
+    # 插入增强技术分析
+    try:
+        enhanced_tech = enhance_technical_analysis(technical, prices, indicators)
+        if enhanced_tech:
+            report_parts.append("\n**📊 深度技术分析**")
+            report_parts.append(enhanced_tech)
+    except Exception as e:
+        print(f"[报告] 增强技术分析失败: {e}")
+
     report_parts.append("")
 
-    # 2. 最新财报实况
+    # 2. 最新财报实况与深度分析
     report_parts.append("## 2. 最新财报实况")
     latest_metrics = fundamental.get('fina_indicator_latest', {})
     income_latest = fundamental.get('income_latest', {})
@@ -1063,6 +1398,30 @@ def _generate_summary(result: Dict) -> str:
             report_parts.append(highlight)
     else:
         report_parts.append("暂无最新财报数据")
+
+    # 插入增强基本面分析
+    try:
+        enhanced_fund = enhance_fundamental_analysis(fundamental)
+        if enhanced_fund and enhanced_fund != "基本面数据不足":
+            report_parts.append("\n**💰 深度财务分析**")
+            report_parts.append(enhanced_fund)
+    except Exception as e:
+        print(f"[报告] 增强基本面分析失败: {e}")
+
+    report_parts.append("")
+
+    # 2.5 估值分析 (新增)
+    report_parts.append("## 2.5 估值水平分析")
+    try:
+        industry = result.get('basic', {}).get('industry', '')
+        enhanced_val = enhance_valuation_analysis(fundamental, technical, industry)
+        if enhanced_val and enhanced_val != "估值数据不足":
+            report_parts.append(enhanced_val)
+        else:
+            report_parts.append("估值数据暂时缺失")
+    except Exception as e:
+        print(f"[报告] 估值分析失败: {e}")
+        report_parts.append("估值数据暂时缺失")
 
     report_parts.append("")
 
@@ -1110,19 +1469,31 @@ def _generate_summary(result: Dict) -> str:
     sentiment_pct = sentiment.get('percentages', {})
     news_count = sentiment.get('news_count', 0)
 
-    sentiment_analysis = {
-        'positive': f"市场情绪乐观，正面新闻占比较高，投资者信心充足",
-        'negative': f"市场情绪偏悲观，负面消息较多，投资者谨慎观望",
-        'neutral': f"市场情绪中性，观望氛围浓厚，等待催化剂出现"
-    }.get(overall_sentiment, "市场情绪不明")
+    if news_count == 0:
+        report_parts.append(f"暂无相关新闻数据，无法进行情绪分析")
+    else:
+        sentiment_analysis = {
+            'positive': f"市场情绪乐观，正面新闻占比较高，投资者信心充足",
+            'negative': f"市场情绪偏悲观，负面消息较多，投资者谨慎观望",
+            'neutral': f"市场情绪中性，观望氛围浓厚，等待催化剂出现"
+        }.get(overall_sentiment, "市场情绪不明")
 
-    report_parts.append(f"基于 {news_count} 条相关新闻分析：{sentiment_analysis}")
+        report_parts.append(f"基于 {news_count} 条相关新闻分析：{sentiment_analysis}")
 
-    if sentiment_pct:
-        pos_pct = sentiment_pct.get('positive', 0)
-        neg_pct = sentiment_pct.get('negative', 0)
-        neu_pct = sentiment_pct.get('neutral', 0)
-        report_parts.append(f"情绪分布：正面 {pos_pct}% / 中性 {neu_pct}% / 负面 {neg_pct}%")
+        if sentiment_pct:
+            pos_pct = sentiment_pct.get('positive', 0)
+            neg_pct = sentiment_pct.get('negative', 0)
+            neu_pct = sentiment_pct.get('neutral', 0)
+            report_parts.append(f"情绪分布：正面 {pos_pct}% / 中性 {neu_pct}% / 负面 {neg_pct}%")
+
+    # 插入增强新闻分析
+    try:
+        enhanced_news = enhance_news_analysis(news_data)
+        if enhanced_news:
+            report_parts.append("\n**📰 深度新闻分析**")
+            report_parts.append(enhanced_news)
+    except Exception as e:
+        print(f"[报告] 增强新闻分析失败: {e}")
 
     report_parts.append("")
 
@@ -1171,7 +1542,8 @@ def _generate_summary(result: Dict) -> str:
             roe_analysis = f"ROE仅{roe:.1f}%，盈利能力偏弱，需关注改善空间"
         report_parts.append(f"• {roe_analysis}")
 
-    # 多维度风险评估
+    # 多维度风险评估 - 先调用风险评估函数
+    risk_analysis = _generate_risk_assessment(result)
     report_parts.append("\n**综合风险评估**：")
     for risk_item in risk_analysis['risk_factors']:
         report_parts.append(f"- {risk_item}")
@@ -1181,6 +1553,15 @@ def _generate_summary(result: Dict) -> str:
     report_parts.append(f"**风险等级**：{risk_analysis['risk_level']}")
     if risk_analysis['stop_loss']:
         report_parts.append(f"**建议止损位**：{risk_analysis['stop_loss']}")
+
+    # 插入增强风险评估
+    try:
+        enhanced_risk = enhance_risk_assessment(result)
+        if enhanced_risk:
+            report_parts.append("\n**🚨 多维度风险分析**")
+            report_parts.append(enhanced_risk)
+    except Exception as e:
+        print(f"[报告] 增强风险评估失败: {e}")
 
     report_parts.append("")
 
@@ -1224,6 +1605,16 @@ def _generate_summary(result: Dict) -> str:
 - 风险控制：优先资本保护，避免重仓操作"""
 
     report_parts.append(strategy)
+
+    # 插入增强投资策略
+    try:
+        enhanced_strategy = generate_investment_strategy(score, technical, fundamental)
+        if enhanced_strategy:
+            report_parts.append("\n**📋 分类投资策略**")
+            report_parts.append(enhanced_strategy)
+    except Exception as e:
+        print(f"[报告] 增强投资策略失败: {e}")
+
     report_parts.append("")
 
     # 8. 简明总结表格
@@ -1263,12 +1654,36 @@ def _generate_summary(result: Dict) -> str:
     action_summary = "积极关注" if total_score >= 70 else "谨慎观望" if total_score >= 50 else "暂缓投资"
     report_parts.append(f"| 策略建议 | {action_summary}，密切关注基本面变化和技术突破 |")
 
+    # 插入增强总结（三句话总结+前瞻观测点）
+    try:
+        enhanced_summary = generate_enhanced_summary(result)
+        if enhanced_summary:
+            report_parts.append(enhanced_summary)
+    except Exception as e:
+        print(f"[报告] 增强总结失败: {e}")
+
+    # 添加Kronos AI预测分析（在报告末尾、免责声明之前）
+    try:
+        from .professional_report_enhancer import analyze_kronos_predictions
+
+        if all_predictions and (all_predictions.get('historical') or all_predictions.get('future')):
+            kronos_analysis = analyze_kronos_predictions(
+                predictions=all_predictions,
+                current_price=current_price,
+                stock_name=stock_name
+            )
+            if kronos_analysis:
+                report_parts.append(kronos_analysis)
+                report_parts.append("")
+    except Exception as e:
+        print(f"[报告] Kronos分析失败: {e}")
+
     report_parts.append("")
     report_parts.append("---")
     report_parts.append(f"**数据更新时间**：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     report_parts.append("*本报告基于公开数据深度分析生成，仅供参考，不构成投资建议。投资有风险，决策需谨慎。*")
 
-    return "\n".join(report_parts)
+    return "\n".join(report_parts), all_predictions
 
 
 def _fetch_professional_data(ts_code: str, stock_name: str) -> Dict[str, Any]:

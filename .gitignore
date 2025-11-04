@@ -53,6 +53,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 server.log
+backend.log
+app.log
+
+# Cache directories
+.cache/
+backend/.cache/
+.qsl_cache/
+
+# Data files
+backend/data/nickname_cache/
 
 # Runtime data
 pids

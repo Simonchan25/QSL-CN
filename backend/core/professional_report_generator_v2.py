@@ -35,6 +35,12 @@ from .stock_picker import get_top_picks
 from .trading_plan import build_trading_plans_for_picks
 from .insight_builder import build_report_summary
 from nlp.ollama_client import summarize, summarize_morning, USE_LLM_FOR_MORNING
+from .quantitative_metrics import (
+    collect_quantitative_metrics,
+    calculate_emotion_score,
+    generate_enhanced_fallback_summary,
+    generate_optimized_prompt
+)
 
 class CustomJSONEncoder(json.JSONEncoder):
     """自定义JSON编码器，处理NaN、inf等特殊值"""
@@ -50,11 +56,13 @@ class CustomJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 def clean_data_for_json(data):
-    """递归清理数据中的NaN和inf值"""
+    """递归清理数据中的NaN、inf值和不可序列化对象"""
     if isinstance(data, dict):
         return {k: clean_data_for_json(v) for k, v in data.items()}
     elif isinstance(data, list):
         return [clean_data_for_json(item) for item in data]
+    elif callable(data):  # 跳过function/method对象
+        return None
     elif pd.isna(data) or (isinstance(data, float) and (math.isnan(data) or math.isinf(data))):
         return None
     elif isinstance(data, (np.integer, np.floating)):
@@ -107,6 +115,17 @@ class ProfessionalReportGeneratorV2:
         except Exception as exc:
             print(f"[报告] 构建结构化摘要失败: {exc}")
             report["insights"] = {"highlights": [], "summary": "数据不足，需人工复核"}
+
+        # 生成图表配置
+        try:
+            print(f"[报告] 生成可视化图表配置...")
+            from .chart_metrics_collector import generate_charts_for_report
+            report["charts"] = generate_charts_for_report(date, report)
+        except Exception as exc:
+            print(f"[报告] 生成图表配置失败: {exc}")
+            import traceback
+            traceback.print_exc()
+            report["charts"] = {}
 
         return report
 
@@ -297,26 +316,45 @@ class ProfessionalReportGeneratorV2:
     # === 辅助数据获取方法 ===
 
     def _get_yesterday_hot_sectors(self, date: str) -> List[Dict]:
-        """获取昨日热门板块（包含板块涨幅和领涨个股）"""
+        """获取昨日热门板块（包含板块涨幅和领涨个股） - 并发优化"""
         try:
             # 获取涨停股票
             limit_up = advanced_client.limit_list_d(trade_date=date.replace('-', ''), limit_type='U')
 
             sectors = []
             if not limit_up.empty:
+                # 并发批量获取概念数据
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+
+                stock_list = limit_up.head(50).to_dict('records')
+                stock_concepts_map = {}
+
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    future_to_code = {
+                        executor.submit(self._get_stock_concepts, stock['ts_code']): stock
+                        for stock in stock_list
+                    }
+
+                    for future in as_completed(future_to_code):
+                        stock = future_to_code[future]
+                        try:
+                            concepts = future.result(timeout=2)
+                            stock_concepts_map[stock['ts_code']] = concepts
+                        except:
+                            stock_concepts_map[stock['ts_code']] = []
+
                 # 按板块分类统计
                 sector_stocks = {}
-                for _, stock in limit_up.head(50).iterrows():  # 增加到50只股票
-                    # 获取股票所属概念
-                    concepts = self._get_stock_concepts(stock['ts_code'])
-                    for concept in concepts[:3]:  # 增加到3个概念
+                for stock in stock_list:
+                    concepts = stock_concepts_map.get(stock['ts_code'], [])
+                    for concept in concepts[:3]:
                         if concept not in sector_stocks:
                             sector_stocks[concept] = []
                         sector_stocks[concept].append({
                             "name": stock['name'],
                             "code": stock['ts_code'][:6],
                             "change": f"+{stock.get('pct_chg', 10):.2f}%" if 'pct_chg' in stock else "+10%",
-                            "volume": stock.get('amount', 0) / 100000000 if 'amount' in stock else 0  # 转换为亿元
+                            "volume": stock.get('amount', 0) / 100000000 if 'amount' in stock else 0
                         })
 
                 # 按板块内股票数量排序，构建返回结果
@@ -334,7 +372,8 @@ class ProfessionalReportGeneratorV2:
                         "analysis": f"板块内{len(stocks)}只个股涨停，成交额{total_volume:.1f}亿元，市场关注度极高",
                         "leading_stocks": stocks[:5],  # 增加到5只领涨股
                         "stock_count": len(stocks),
-                        "total_volume": total_volume
+                        "total_volume": total_volume,
+                        "data_source": "limit_up_stocks"
                     })
 
             # 如果没有涨停股票，尝试获取涨幅较大的股票
@@ -367,42 +406,187 @@ class ProfessionalReportGeneratorV2:
                                     "sector_performance": f"+{avg_change:.1f}%",
                                     "analysis": f"板块内{len(stocks)}只个股表现活跃，平均涨幅{avg_change:.1f}%",
                                     "leading_stocks": stocks[:3],
-                                    "stock_count": len(stocks)
+                                    "stock_count": len(stocks),
+                                    "data_source": "top_gainers"
                                 })
                 except Exception as inner_e:
                     print(f"[警告] 获取涨幅榜失败: {inner_e}")
 
-            return sectors if sectors else [{
-                "sector": "科技创新",
-                "sector_performance": "+1.2%",
-                "analysis": "市场整体平稳，科技类个股有结构性机会",
-                "leading_stocks": [
-                    {"name": "科技龙头", "code": "000001", "change": "+2.1%"},
-                    {"name": "创新企业", "code": "000002", "change": "+1.8%"}
-                ],
-                "stock_count": 5
-            }, {
-                "sector": "消费升级",
-                "sector_performance": "+0.8%",
-                "analysis": "消费板块温和上涨，关注业绩确定性品种",
-                "leading_stocks": [
-                    {"name": "消费龙头", "code": "000003", "change": "+1.5%"}
-                ],
-                "stock_count": 3
-            }]
+            # 如果仍然没有数据，从基本市场数据获取
+            if not sectors:
+                sectors = self._get_market_sectors_fallback(date)
+
+            return sectors if sectors else []
         except Exception as e:
             print(f"[错误] 获取昨日热门板块失败: {e}")
-            # 提供基础的市场分析数据，确保报告有内容
-            return [{
-                "sector": "市场均衡",
-                "sector_performance": "+0.5%",
-                "analysis": "数据获取异常，市场整体呈现震荡态势",
-                "leading_stocks": [],
-                "stock_count": 0
-            }]
+            # 数据获取失败，返回空列表
+            return []
+
+    def _get_market_sectors_fallback(self, date: str) -> List[Dict]:
+        """
+        获取市场板块数据的fallback方法
+        使用Tushare的daily接口获取当日行情数据，按概念分组
+        """
+        try:
+            print(f"[数据] 使用fallback方法获取市场板块数据: {date}")
+
+            # 优先使用涨停股票数据
+            trade_date = date.replace('-', '')
+            gainers = pd.DataFrame()
+
+            try:
+                # 方案1：使用涨停股票数据（最优质的热点数据）
+                from .advanced_data_client import advanced_client
+                limit_up = advanced_client.limit_list_d(trade_date=trade_date, limit_type='U')
+                if not limit_up.empty:
+                    print(f"[数据] 找到{len(limit_up)}只涨停股票")
+                    gainers = limit_up.head(100)
+            except Exception as e:
+                print(f"[数据] 涨停数据获取失败: {e}")
+
+            # 方案2：如果涨停数据不足，使用龙虎榜数据补充
+            if len(gainers) < 50:
+                try:
+                    from .market import top_list
+                    top_list_data = top_list(trade_date=trade_date)
+                    if not top_list_data.empty:
+                        print(f"[数据] 补充{len(top_list_data)}只龙虎榜股票")
+                        gainers = pd.concat([gainers, top_list_data.head(50)], ignore_index=True)
+                except Exception as e:
+                    print(f"[数据] 龙虎榜数据获取失败: {e}")
+
+            if gainers.empty:
+                print(f"[警告] 没有获取到{date}的热点股票数据，尝试使用最近交易日数据")
+                # 尝试使用最近1-3个交易日的数据
+                from .trading_date_helper import find_latest_trading_date_with_data
+                for days_back in range(1, 4):
+                    try:
+                        from datetime import datetime, timedelta
+                        fallback_date = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                        fallback_trade_date = fallback_date.replace('-', '')
+
+                        # 尝试涨停数据
+                        limit_up_fallback = advanced_client.limit_list_d(trade_date=fallback_trade_date, limit_type='U')
+                        if not limit_up_fallback.empty:
+                            print(f"[数据] 使用{fallback_date}的涨停数据")
+                            gainers = limit_up_fallback.head(100)
+                            break
+                    except:
+                        continue
+
+                if gainers.empty:
+                    print(f"[警告] 最近3日也无数据，返回空列表")
+                    return []
+
+            print(f"[数据] 共找到{len(gainers)}只热点股票")
+
+            # 按概念分组
+            concept_groups = {}
+            for _, stock in gainers.iterrows():
+                # 获取股票所属概念
+                concepts = self._get_stock_concepts(stock['ts_code'])
+
+                for concept in concepts[:2]:  # 每只股票取前2个概念
+                    if concept == "未知概念":
+                        continue
+
+                    if concept not in concept_groups:
+                        concept_groups[concept] = []
+
+                    # 获取涨幅（如果有pct_chg字段就用，否则默认+5%）
+                    pct_chg = stock.get('pct_chg', 5.0) if 'pct_chg' in stock else 5.0
+
+                    # 获取成交额（Tushare的amount字段单位是元，需转换为亿元）
+                    volume_yuan = stock.get('amount', stock.get('total_mv', 0))
+                    volume_yi = round(volume_yuan / 100000000, 2) if volume_yuan else 0  # 元 → 亿元
+
+                    concept_groups[concept].append({
+                        "name": stock.get('name', stock['ts_code'][:6]),
+                        "code": stock['ts_code'][:6],
+                        "change": f"+{pct_chg:.2f}%",
+                        "volume": volume_yi  # 已转换为亿元
+                    })
+
+            # 构建板块数据
+            sectors = []
+            for concept, stocks in concept_groups.items():
+                if len(stocks) < 2:  # 至少2只股票才算板块
+                    continue
+
+                # 计算板块平均涨幅
+                avg_change = sum(float(s['change'].replace('+', '').replace('%', '')) for s in stocks) / len(stocks)
+
+                # 计算总成交额
+                total_volume = sum(s['volume'] for s in stocks)
+
+                sectors.append({
+                    "sector": concept,
+                    "sector_performance": f"+{avg_change:.1f}%",
+                    "analysis": f"板块内{len(stocks)}只个股表现活跃，平均涨幅{avg_change:.1f}%，成交额{total_volume:.1f}亿元",
+                    "leading_stocks": stocks[:5],  # 最多显示5只领涨股
+                    "stock_count": len(stocks),
+                    "total_volume": total_volume,
+                    "data_source": "tushare_daily"
+                })
+
+            # 按股票数量和平均涨幅排序
+            sectors.sort(key=lambda x: (x['stock_count'], float(x['sector_performance'].replace('+', '').replace('%', ''))), reverse=True)
+
+            # 验证数据
+            validated_sectors = self._validate_sector_data(sectors[:10])
+
+            print(f"[数据] 成功生成{len(validated_sectors)}个板块数据")
+            return validated_sectors
+
+        except Exception as e:
+            print(f"[错误] fallback方法获取市场板块失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _validate_sector_data(self, sectors: List[Dict]) -> List[Dict]:
+        """
+        验证板块数据的有效性
+        """
+        validated = []
+
+        for sector in sectors:
+            try:
+                # 验证必需字段存在
+                if not all(key in sector for key in ['sector', 'sector_performance', 'analysis', 'leading_stocks']):
+                    print(f"[警告] 板块数据缺少必需字段: {sector.get('sector', '未知')}")
+                    continue
+
+                # 验证涨跌幅在合理范围(-20% ~ +20%)
+                performance_str = sector['sector_performance'].replace('+', '').replace('%', '')
+                try:
+                    performance_value = float(performance_str)
+                    if performance_value < -20 or performance_value > 20:
+                        print(f"[警告] 板块涨幅异常: {sector['sector']} = {performance_value}%")
+                        continue
+                except ValueError:
+                    print(f"[警告] 板块涨幅格式错误: {sector['sector']} = {performance_str}")
+                    continue
+
+                # 验证股票数量
+                if sector.get('stock_count', 0) < 1:
+                    print(f"[警告] 板块股票数量为0: {sector['sector']}")
+                    continue
+
+                # 添加data_source字段（如果没有）
+                if 'data_source' not in sector:
+                    sector['data_source'] = 'unknown'
+
+                validated.append(sector)
+
+            except Exception as e:
+                print(f"[错误] 验证板块数据失败: {e}")
+                continue
+
+        return validated
 
     def _get_policy_updates(self, date: str) -> List[Dict]:
-        """获取政策动态"""
+        """获取政策动态（使用行业异动生成政策提示）"""
         try:
             # 获取重要新闻作为政策动态
             news_data = major_news(limit=10)
@@ -420,7 +604,25 @@ class ProfessionalReportGeneratorV2:
                             "impact_assessment": "利好相关板块发展"
                         })
 
-            return policy_updates[:3] if policy_updates else []
+            # Fallback: 如果没有政策新闻，基于行业异动生成政策关注提示
+            if not policy_updates:
+                print("[信息] 无政策新闻，生成政策关注提示")
+                from .advanced_data_client import advanced_client
+                trade_date = date.replace('-', '')
+                limit_up = advanced_client.limit_list_d(trade_date=trade_date, limit_type='U')
+
+                if not limit_up.empty:
+                    # 统计行业分布
+                    industry_counts = limit_up.groupby('industry').size().sort_values(ascending=False)
+                    for industry, count in industry_counts.head(3).items():
+                        policy_updates.append({
+                            "title": f"关注{industry}行业政策动向",
+                            "content": f"{industry}板块今日表现活跃（{count}只个股涨停），建议关注相关产业政策和行业规划，可能存在政策催化预期。",
+                            "affected_sectors": [industry],
+                            "impact_assessment": "中性，需跟踪政策落地情况"
+                        })
+
+            return policy_updates[:3]
         except Exception as e:
             print(f"[错误] 获取政策动态失败: {e}")
             return []
@@ -449,16 +651,33 @@ class ProfessionalReportGeneratorV2:
                         result.append(f"{concept}：{', '.join(stocks[:3])}")  # 每个概念最多3只股票
                 return result[:8]  # 最多返回8个概念
             else:
-                return ["市场平稳，无明显热点"]
+                print(f"[警告] 没有涨停股票，日期: {date}")
+                return []
         except Exception as e:
             print(f"[错误] 获取昨日热点失败: {e}")
-            return ["数据获取失败"]
+            import traceback
+            traceback.print_exc()
+            return []
 
     def _get_major_events_with_analysis(self, date: str) -> List[Dict]:
         """获取重大事件并分析"""
         try:
-            # 获取重大新闻
-            major_news_data = major_news(limit=10)
+            # 获取重大新闻，增加超时保护
+            import signal
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+            def get_news_with_timeout():
+                return major_news(limit=10)
+
+            # 使用线程池和超时控制
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(get_news_with_timeout)
+                try:
+                    major_news_data = future.result(timeout=15)  # 15秒超时
+                except FutureTimeoutError:
+                    print(f"[警告] 重大新闻API调用超时，使用fallback方案")
+                    trade_date = self._get_last_trade_date(date)
+                    return self._generate_events_from_limit_stocks(trade_date)
 
             events = []
             if not major_news_data.empty:
@@ -487,66 +706,123 @@ class ProfessionalReportGeneratorV2:
                     }
                     events.append(event)
 
-            # 如果没有获取到新闻，提供一些基本的市场事件
+            # 如果没有获取到新闻，使用涨停股票生成事件
             if not events:
-                events = [
-                    {
-                        "title": "市场动态：A股整体运行平稳",
-                        "content": "今日A股市场整体运行平稳，各板块表现分化，投资者情绪相对理性。",
-                        "related_stocks": [],
-                        "affected_sectors": ["金融", "科技"],
-                        "investment_logic": "关注业绩确定性较高的龙头股票",
-                        "market_impact": "中性偏积极",
-                        "importance": "中"
-                    },
-                    {
-                        "title": "政策环境：宏观政策保持稳定",
-                        "content": "当前宏观政策环境保持稳定，为市场提供了良好的发展环境。",
-                        "related_stocks": [],
-                        "affected_sectors": ["基建", "地产"],
-                        "investment_logic": "关注政策受益板块的投资机会",
-                        "market_impact": "积极",
-                        "importance": "中"
-                    }
-                ]
+                print(f"[警告] 没有获取到重大新闻数据，使用涨停数据生成事件")
+                # 获取最后交易日
+                trade_date = self._get_last_trade_date(date)
+                events = self._generate_events_from_limit_stocks(trade_date)
+                if not events:
+                    return []
 
             return events[:8]  # 返回前8个事件
         except Exception as e:
             print(f"[错误] 获取重大事件失败: {e}")
-            # 提供备用事件数据
-            return [
-                {
-                    "title": "数据获取异常：市场基本面保持稳定",
-                    "content": "由于数据接口问题，无法获取最新新闻，但市场基本面保持相对稳定。",
-                    "related_stocks": [],
-                    "affected_sectors": ["全市场"],
-                    "investment_logic": "保持谨慎乐观，关注个股基本面",
-                    "market_impact": "影响有限",
-                    "importance": "低"
-                }
-            ]
+            import traceback
+            traceback.print_exc()
+            # 数据获取失败，返回空列表
+            return []
+
+    def _generate_events_from_limit_stocks(self, date: str) -> List[Dict]:
+        """从涨停股票数据生成重大事件（fallback方案）"""
+        try:
+            from .advanced_data_client import advanced_client
+            trade_date = date.replace('-', '')
+            limit_up = advanced_client.limit_list_d(trade_date=trade_date, limit_type='U')
+
+            if limit_up.empty:
+                return []
+
+            # 按行业分组
+            events = []
+            industry_groups = {}
+            for _, stock in limit_up.head(30).iterrows():
+                industry = stock.get('industry', '其他')
+                if industry not in industry_groups:
+                    industry_groups[industry] = []
+                industry_groups[industry].append(stock)
+
+            # 生成事件
+            for industry, stocks in sorted(industry_groups.items(), key=lambda x: len(x[1]), reverse=True)[:5]:
+                if len(stocks) >= 2:  # 至少2只股票才算事件
+                    stock_names = [s['name'] for s in stocks[:3]]
+                    event = {
+                        "title": f"{industry}板块集体异动，{len(stocks)}只个股涨停",
+                        "content": f"{industry}板块今日表现强势，包括{'、'.join(stock_names)}等{len(stocks)}只个股涨停，显示板块资金关注度较高，可能存在政策催化或业绩预期提升。",
+                        "related_stocks": stock_names[:5],
+                        "affected_sectors": [industry],
+                        "investment_logic": f"关注{industry}板块的持续性，重点跟踪龙头股表现",
+                        "market_impact": "中" if len(stocks) < 5 else "高",
+                        "publish_time": date,
+                        "importance": "中"
+                    }
+                    events.append(event)
+
+            return events
+        except Exception as e:
+            print(f"[错误] 从涨停数据生成事件失败: {e}")
+            return []
+
+    def _get_last_trade_date(self, date: str) -> str:
+        """获取最后一个交易日"""
+        try:
+            from .advanced_data_client import advanced_client
+            current_date = datetime.strptime(date, '%Y-%m-%d')
+
+            # 向前查找最多7天
+            for i in range(7):
+                check_date = (current_date - timedelta(days=i)).strftime('%Y%m%d')
+                # 尝试获取该日期的涨停数据，如果有数据说明是交易日
+                limit_up = advanced_client.limit_list_d(trade_date=check_date, limit_type='U')
+                if limit_up is not None and len(limit_up) > 0:
+                    print(f"[信息] 找到最后交易日: {check_date}")
+                    return (current_date - timedelta(days=i)).strftime('%Y-%m-%d')
+
+            # 如果找不到，返回原日期
+            print(f"[警告] 未找到最近的交易日，使用原日期: {date}")
+            return date
+        except Exception as e:
+            print(f"[错误] 获取最后交易日失败: {e}")
+            return date
 
     def _get_industry_news_digest(self, date: str) -> List[Dict]:
-        """获取行业要闻摘要"""
+        """获取行业要闻摘要（使用热点板块数据生成）"""
         try:
-            # 获取公告数据作为行业要闻
-            # 使用平安银行作为默认股票获取公告数据
-            announcements = anns(ts_code="000001.SZ")
+            # 由于Tushare免费版anns API字段有限，改用热点板块生成行业要闻
+            # 获取最后交易日
+            trade_date_str = self._get_last_trade_date(date)
+            trade_date = trade_date_str.replace('-', '')
+            from .advanced_data_client import advanced_client
+            limit_up = advanced_client.limit_list_d(trade_date=trade_date, limit_type='U')
 
             news_digest = []
-            if not announcements.empty:
-                for _, ann in announcements.head(15).iterrows():
-                    digest_item = {
-                        "company": ann['name'],
-                        "title": ann['title'][:50] + "..." if len(ann['title']) > 50 else ann['title'],
-                        "type": self._classify_announcement_type(ann['title'])
-                    }
-                    news_digest.append(digest_item)
+            if not limit_up.empty:
+                # 按行业分类
+                industry_dict = {}
+                for _, stock in limit_up.head(50).iterrows():
+                    industry = stock.get('industry', '其他')
+                    if industry not in industry_dict:
+                        industry_dict[industry] = []
+                    industry_dict[industry].append(stock['name'])
 
-            return news_digest
+                # 生成行业要闻
+                for industry, stocks in sorted(industry_dict.items(), key=lambda x: len(x[1]), reverse=True)[:10]:
+                    if len(stocks) >= 1:
+                        digest_item = {
+                            "company": industry,
+                            "title": f"{industry}板块活跃，{len(stocks)}只个股涨停（{'、'.join(stocks[:3])}等）",
+                            "type": "行业动态"
+                        }
+                        news_digest.append(digest_item)
+
+            # 如果还是没数据，提供默认提示
+            if not news_digest:
+                news_digest = [{"company": "市场", "title": f"{date}暂无重大行业新闻", "type": "其他"}]
+
+            return news_digest[:15]
         except Exception as e:
             print(f"[错误] 获取行业要闻失败: {e}")
-            return []
+            return [{"company": "系统", "title": "数据获取失败", "type": "其他"}]
 
     def _get_board_hierarchy(self, date: str) -> Dict:
         """获取连板梯队"""
@@ -714,10 +990,12 @@ class ProfessionalReportGeneratorV2:
             daily_anns = []
             if not announcements.empty:
                 for _, ann in announcements.head(10).iterrows():
+                    company_name = ann.get('name', ann.get('ts_code', '')[:6])
+                    title = ann.get('title', ann.get('ann_title', ''))
                     daily_anns.append({
-                        "company": ann['name'],
-                        "title": ann['title'],
-                        "type": self._classify_announcement_type(ann['title'])
+                        "company": company_name,
+                        "title": title,
+                        "type": self._classify_announcement_type(title)
                     })
 
             return daily_anns
@@ -753,61 +1031,37 @@ class ProfessionalReportGeneratorV2:
         return []
 
     def _generate_professional_ai_summary(self, report: Dict) -> str:
-        """生成专业AI总结"""
+        """生成专业AI总结 - 集成量化指标"""
         try:
-            # 构建包含实际数据的详细提示词
-            sections_data = report.get('sections', {})
+            date = report.get('date', '')
 
-            # 提取关键数据用于LLM分析
+            # 1. 收集量化指标
+            metrics = collect_quantitative_metrics(date)
+
+            # 2. 提取sections数据
+            sections_data = report.get('sections', {})
             hotspots_data = sections_data.get('pre_market_hotspots', {})
             board_data = sections_data.get('board_analysis', {})
-            announcements_data = sections_data.get('announcement_highlights', {})
-            popularity_data = sections_data.get('popularity_rankings', {})
 
-            # 构建数据丰富的prompt
-            detailed_prompt = f"""
-请基于以下A股市场真实数据生成专业的早报总结：
+            # 3. 生成优化的提示词（包含量化数据）
+            detailed_prompt = generate_optimized_prompt(metrics, date, hotspots_data, board_data)
 
-【日期】：{report['date']}
-
-【盘前热点数据】：
-{json.dumps(hotspots_data, ensure_ascii=False, indent=2)}
-
-【连板与涨停数据】：
-{json.dumps(board_data, ensure_ascii=False, indent=2)}
-
-【公告数据】：
-{json.dumps(announcements_data, ensure_ascii=False, indent=2)}
-
-【人气排行数据】：
-{json.dumps(popularity_data, ensure_ascii=False, indent=2)}
-
-请生成一份专业的市场总结，必须包括：
-
-一、【市场概况】基于具体数据分析市场整体状态
-二、【热点分析】识别主要热点板块和个股机会
-三、【资金动向】分析机构和资金流向变化
-四、【投资策略】提供具体的操作建议和仓位配置
-五、【风险提示】指出需要注意的市场风险
-
-要求：
-1. 必须基于提供的真实数据进行分析，不得使用虚构数据
-2. 每个判断都要有数据支撑，避免空洞表述
-3. 提供具体可执行的投资建议
-4. 语言专业简洁，总长度800-1200字
-5. 如数据不足请明确说明并基于现有信息给出合理分析
-"""
-
+            # 4. 调用LLM或使用增强的fallback
             if USE_LLM_FOR_MORNING:
                 summary = summarize_morning(detailed_prompt)
                 return summary
             else:
-                # 基于真实数据生成详细的fallback分析
-                return self._generate_detailed_fallback_summary(report)
+                # 使用增强的fallback分析（基于量化指标）
+                return generate_enhanced_fallback_summary(metrics, date)
 
         except Exception as e:
             print(f"[错误] 生成AI总结失败: {e}")
-            return self._generate_detailed_fallback_summary(report)
+            # 尝试使用基础量化数据生成fallback
+            try:
+                metrics = collect_quantitative_metrics(report.get('date', ''))
+                return generate_enhanced_fallback_summary(metrics, report.get('date', ''))
+            except:
+                return self._generate_detailed_fallback_summary(report)
 
     def _generate_detailed_fallback_summary(self, report: Dict) -> str:
         """生成基于真实数据的详细fallback分析"""
@@ -897,10 +1151,22 @@ class ProfessionalReportGeneratorV2:
     def _get_hot_sectors_analysis(self, date: str, market_data: Dict) -> Dict:
         """获取热门板块分析"""
         try:
-            from .hotspot import find_daily_hotspots
+            # 直接使用advanced_client获取涨停数据生成热点
+            trade_date = date.replace('-', '')
+            limit_up = advanced_client.limit_list_d(trade_date=trade_date, limit_type='U')
 
-            # 获取热点分析
-            hotspots = find_daily_hotspots(date.replace('-', ''))
+            # 按行业分组生成热点
+            hotspots = []
+            if not limit_up.empty:
+                industry_groups = limit_up.groupby('industry')
+                for industry, group in industry_groups:
+                    if len(group) >= 2:  # 至少2只股票
+                        stocks = group['name'].tolist()[:5]
+                        hotspots.append({
+                            'title': industry,
+                            '热度': len(group) * 10,  # 涨停数量作为热度
+                            '相关股票': [{'name': s} for s in stocks]
+                        })
 
             # 从market_data中获取真实涨停数据
             board_stats = {

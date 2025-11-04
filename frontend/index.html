@@ -7,6 +7,92 @@
     <meta name="color-scheme" content="dark" />
     <title>QSL-A股分析助手</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+
+    <!-- CRITICAL: Crypto polyfill - MUST be THE FIRST SCRIPT -->
+    <script>
+      // Aggressive crypto.randomUUID polyfill
+      (function() {
+        var randomUUIDPolyfill = function() {
+          return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        };
+
+        // Store original crypto
+        var originalCrypto = (typeof window !== 'undefined' && window.crypto) || {};
+
+        // Create new crypto object with all original methods plus randomUUID
+        var newCrypto = Object.create(originalCrypto);
+        newCrypto.randomUUID = randomUUIDPolyfill;
+
+        // Copy all original properties
+        for (var key in originalCrypto) {
+          if (originalCrypto.hasOwnProperty(key) && key !== 'randomUUID') {
+            try {
+              newCrypto[key] = originalCrypto[key];
+            } catch(e) {}
+          }
+        }
+
+        // Force override window.crypto
+        if (typeof window !== 'undefined') {
+          try {
+            delete window.crypto;
+          } catch(e) {}
+
+          try {
+            Object.defineProperty(window, 'crypto', {
+              value: newCrypto,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          } catch (e) {
+            window.crypto = newCrypto;
+          }
+        }
+
+        // Force override globalThis.crypto
+        if (typeof globalThis !== 'undefined') {
+          try {
+            delete globalThis.crypto;
+          } catch(e) {}
+
+          try {
+            Object.defineProperty(globalThis, 'crypto', {
+              value: newCrypto,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          } catch (e) {
+            globalThis.crypto = newCrypto;
+          }
+        }
+
+        // Force override global crypto
+        if (typeof self !== 'undefined') {
+          try {
+            delete self.crypto;
+          } catch(e) {}
+
+          try {
+            Object.defineProperty(self, 'crypto', {
+              value: newCrypto,
+              writable: true,
+              configurable: true,
+              enumerable: true
+            });
+          } catch (e) {
+            self.crypto = newCrypto;
+          }
+        }
+
+        console.log('[Polyfill] crypto.randomUUID installed:', typeof newCrypto.randomUUID);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react'
+import API_BASE_URL from '../config/api'
 
 // 动态获取API地址
 const getApiUrl = (path) => {
-  // 如果是本地开发环境，使用localhost
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return `http://localhost:8001${path}`
-  }
-  // 否则使用当前访问的主机地址
-  return `http://${window.location.hostname}:8001${path}`
+  return `${API_BASE_URL}${path}`
 }
 
 export default function MarketOverview({ className = '' }) {
@@ -118,15 +114,15 @@ export default function MarketOverview({ className = '' }) {
       const cyb = marketData.indices[2]?.pct_chg || 0
       
       if (avgChange > 1.5) {
-        trendAnalysis = `📈 今日A股全面爆发，上证指数涨${sh.toFixed(2)}%，深成指涨${sz.toFixed(2)}%，创业板涨${cyb.toFixed(2)}%。多头强势主导，市场情绪高涨。`
+        trendAnalysis = `今日A股全面爆发，上证指数涨${sh.toFixed(2)}%，深成指涨${sz.toFixed(2)}%，创业板涨${cyb.toFixed(2)}%。多头强势主导，市场情绪高涨。`
       } else if (avgChange > 0.5) {
-        trendAnalysis = `📊 市场温和上涨，主要指数${sh > 0 ? '上证领涨' : sz > 0 ? '深成指领涨' : '创业板领涨'}。结构性行情延续，赚钱效应尚可。`
+        trendAnalysis = `市场温和上涨，主要指数${sh > 0 ? '上证领涨' : sz > 0 ? '深成指领涨' : '创业板领涨'}。结构性行情延续，赚钱效应尚可。`
       } else if (avgChange > -0.5) {
-        trendAnalysis = `⚖️ 大盘横盘震荡，上证${sh > 0 ? '微涨' : '微跌'}${Math.abs(sh).toFixed(2)}%，市场分歧加大，观望情绪浓厚。`
+        trendAnalysis = `大盘横盘震荡，上证${sh > 0 ? '微涨' : '微跌'}${Math.abs(sh).toFixed(2)}%，市场分歧加大，观望情绪浓厚。`
       } else if (avgChange > -1.5) {
-        trendAnalysis = `📉 市场小幅调整，${Math.min(sh, sz, cyb) === sh ? '上证领跌' : Math.min(sh, sz, cyb) === sz ? '深成指领跌' : '创业板领跌'}。短期承压，注意风险控制。`
+        trendAnalysis = `市场小幅调整，${Math.min(sh, sz, cyb) === sh ? '上证领跌' : Math.min(sh, sz, cyb) === sz ? '深成指领跌' : '创业板领跌'}。短期承压，注意风险控制。`
       } else {
-        trendAnalysis = `⚠️ 大盘大幅下挫，三大指数全线重挫超${Math.abs(avgChange).toFixed(1)}%。恐慌情绪蔓延，建议谨慎观望。`
+        trendAnalysis = `大盘大幅下挫，三大指数全线重挫超${Math.abs(avgChange).toFixed(1)}%。恐慌情绪蔓延，建议谨慎观望。`
       }
       analysis.trend = trendAnalysis
       
@@ -171,13 +167,13 @@ export default function MarketOverview({ className = '' }) {
         const upRatio = (marketData.market_breadth.up_count / marketData.market_breadth.total_count * 100).toFixed(1)
         let sentimentAnalysis = ''
         if (upRatio > 70) {
-          sentimentAnalysis = `🔥 市场情绪火爆！${marketData.market_breadth.up_count}只个股上涨，涨停板众多，赚钱效应极佳。`
+          sentimentAnalysis = `市场情绪火爆！${marketData.market_breadth.up_count}只个股上涨，涨停板众多，赚钱效应极佳。`
         } else if (upRatio > 50) {
-          sentimentAnalysis = `😊 ${marketData.market_breadth.up_count}涨/${marketData.market_breadth.down_count}跌，多头占优，个股活跃度较高。`
+          sentimentAnalysis = `${marketData.market_breadth.up_count}涨/${marketData.market_breadth.down_count}跌，多头占优，个股活跃度较高。`
         } else if (upRatio > 30) {
-          sentimentAnalysis = `😐 涨跌比${marketData.market_breadth.up_count}:${marketData.market_breadth.down_count}，市场分化严重，操作难度加大。`
+          sentimentAnalysis = `涨跌比${marketData.market_breadth.up_count}:${marketData.market_breadth.down_count}，市场分化严重，操作难度加大。`
         } else {
-          sentimentAnalysis = `😰 仅${marketData.market_breadth.up_count}只个股上涨，市场极度低迷，建议空仓观望。`
+          sentimentAnalysis = `仅${marketData.market_breadth.up_count}只个股上涨，市场极度低迷，建议空仓观望。`
         }
         analysis.sentiment = sentimentAnalysis
       }
@@ -204,13 +200,13 @@ export default function MarketOverview({ className = '' }) {
       // 6. 操作建议
       let suggestion = ''
       if (avgChange > 1 && marketData.capital_flow?.hsgt_net_amount !== null && marketData.capital_flow?.hsgt_net_amount > 50) {
-        suggestion = `💡 操作建议：市场强势且北向资金流入，可适度加仓，重点关注${marketData.sectors?.[0]?.name || '领涨板块'}的龙头股。建议仓位控制在60-70%。`
+        suggestion = `操作建议：市场强势且北向资金流入，可适度加仓，重点关注${marketData.sectors?.[0]?.name || '领涨板块'}的龙头股。建议仓位控制在60-70%。`
       } else if (avgChange > 0) {
-        suggestion = `💡 操作建议：市场震荡向上，可维持半仓操作，采取高抛低吸策略。关注${marketData.hot_stocks?.[0]?.name || '热门'}等市场热点。`
+        suggestion = `操作建议：市场震荡向上，可维持半仓操作，采取高抛低吸策略。关注${marketData.hot_stocks?.[0]?.name || '热门'}等市场热点。`
       } else if (avgChange > -1) {
-        suggestion = `💡 操作建议：市场调整压力较大，建议降低仓位至30%以下，等待企稳信号。可适当关注防御性板块。`
+        suggestion = `操作建议：市场调整压力较大，建议降低仓位至30%以下，等待企稳信号。可适当关注防御性板块。`
       } else {
-        suggestion = `💡 操作建议：市场风险释放中，建议空仓观望，等待超跌反弹机会。重点观察成交量和北向资金动向。`
+        suggestion = `操作建议：市场风险释放中，建议空仓观望，等待超跌反弹机会。重点观察成交量和北向资金动向。`
       }
       analysis.suggestion = suggestion
       
@@ -489,7 +485,11 @@ export default function MarketOverview({ className = '' }) {
           {aiAnalysis.sentiment && !aiAnalysis.sentiment.error && (
             <div className="analysis-dimension">
               <div className="dimension-header">
-                <span className="dimension-icon">😊</span>
+                <span className="dimension-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M15.5,8A1.5,1.5 0 0,1 17,9.5A1.5,1.5 0 0,1 15.5,11A1.5,1.5 0 0,1 14,9.5A1.5,1.5 0 0,1 15.5,8M8.5,8A1.5,1.5 0 0,1 10,9.5A1.5,1.5 0 0,1 8.5,11A1.5,1.5 0 0,1 7,9.5A1.5,1.5 0 0,1 8.5,8M12,17.5C9.67,17.5 7.69,16.04 6.89,14H17.11C16.31,16.04 14.33,17.5 12,17.5Z"/>
+                  </svg>
+                </span>
                 <span className="dimension-title">市场情绪解读</span>
                 {aiAnalysis.sentiment.emotion_score && (
                   <span className={`emotion-badge ${aiAnalysis.sentiment.emotion_score >= 6 ? 'positive' : aiAnalysis.sentiment.emotion_score >= 4 ? 'neutral' : 'negative'}`}>
@@ -538,7 +538,12 @@ export default function MarketOverview({ className = '' }) {
             {/* 操作建议 */}
             {aiAnalysis.summary && aiAnalysis.summary.operation_advice && (
               <div className="advice-section">
-                <div className="advice-title">💡 操作建议</div>
+                <div className="advice-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21A1,1 0 0,0 8,22A1,1 0 0,0 9,23H15A1,1 0 0,0 16,22A1,1 0 0,0 15,21V20H9V21Z"/>
+                  </svg>
+                  操作建议
+                </div>
                 <div className="advice-list">
                   {aiAnalysis.summary.operation_advice.slice(0, 2).map((advice, index) => (
                     <div key={index} className="advice-item">{advice}</div>
@@ -550,7 +555,12 @@ export default function MarketOverview({ className = '' }) {
             {/* 风险提示 */}
             {aiAnalysis.summary && aiAnalysis.summary.risk_warnings && (
               <div className="risk-section">
-                <div className="risk-title">⚠️ 风险提示</div>
+                <div className="risk-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/>
+                  </svg>
+                  风险提示
+                </div>
                 <div className="risk-list">
                   {aiAnalysis.summary.risk_warnings.slice(0, 1).map((warning, index) => (
                     <div key={index} className="risk-item">{warning}</div>
@@ -564,7 +574,11 @@ export default function MarketOverview({ className = '' }) {
           {aiAnalysis.structure && !aiAnalysis.structure.error && (
             <div className="analysis-dimension">
               <div className="dimension-header">
-                <span className="dimension-icon">📊</span>
+                <span className="dimension-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M9,17H7V10H9V17M13,17H11V7H13V17M17,17H15V13H17V17Z"/>
+                  </svg>
+                </span>
                 <span className="dimension-title">指数板块结构</span>
               </div>
               <div className="dimension-content">
@@ -659,7 +673,11 @@ export default function MarketOverview({ className = '' }) {
           {aiAnalysis.summary && aiAnalysis.summary.operation_advice && (
             <div className="ai-advice-section">
               <div className="advice-header">
-                <span className="advice-icon">💡</span>
+                <span className="advice-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21A1,1 0 0,0 8,22A1,1 0 0,0 9,23H15A1,1 0 0,0 16,22A1,1 0 0,0 15,21V20H9V21Z"/>
+                  </svg>
+                </span>
                 <span className="advice-title">操作建议</span>
                 <span className="confidence-badge">
                   置信度: {aiAnalysis.summary.confidence_level}
@@ -672,7 +690,12 @@ export default function MarketOverview({ className = '' }) {
               </div>
               {aiAnalysis.summary.risk_warnings && (
                 <div className="risk-warnings">
-                  <div className="warning-header">⚠️ 风险提示</div>
+                  <div className="warning-header" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M13,14H11V10H13M13,18H11V16H13M1,21H23L12,2L1,21Z"/>
+                    </svg>
+                    风险提示
+                  </div>
                   {aiAnalysis.summary.risk_warnings.map((warning, i) => (
                     <div key={i} className="warning-item">{warning}</div>
                   ))}

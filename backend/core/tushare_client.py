@@ -30,8 +30,10 @@ except ImportError:
         return ttl_config.get(data_type, 3600)  # 默认1小时
 
 # 配置 Tushare
-# 优先使用环境变量，否则使用默认token
-token = os.getenv("TUSHARE_TOKEN", "e470904e8ad4c47e1d2f9dcdbe69bc98c5e7ecaa2adf66fdd64c3082")
+# 从环境变量读取token
+token = os.getenv("TUSHARE_TOKEN")
+if not token:
+    raise ValueError("TUSHARE_TOKEN environment variable is required. Please set it in .env file")
 ts.set_token(token)
 pro = ts.pro_api()
 

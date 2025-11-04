@@ -1,14 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import '../chat.css'
+import API_BASE_URL from '../config/api'
 
 // 动态获取API地址
 const getApiUrl = (path) => {
-  // 如果是本地开发环境，使用localhost
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return `http://localhost:8001${path}`
-  }
-  // 否则使用当前访问的主机地址
-  return `http://${window.location.hostname}:8001${path}`
+  return `${API_BASE_URL}${path}`
 }
 
 export default function FloatingChat() {

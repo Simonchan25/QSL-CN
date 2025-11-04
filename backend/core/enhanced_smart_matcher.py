@@ -240,18 +240,18 @@ class EnhancedSmartNewsMatcher:
                     })
                     continue
 
-            # 4. 产业链相关
-            if include_industry:
-                chain_match = self._match_supply_chain(stock_name, stock_industry, full_text)
-                if chain_match:
-                    matches.append({
-                        **news,
-                        'relevance_type': 'supply_chain',
-                        'match_score': chain_match['score'],
-                        'matched_terms': chain_match['terms'],
-                        'confidence': chain_match['confidence'],
-                        'match_reason': f"产业链: {chain_match['chain_type']}"
-                    })
+            # 4. 产业链相关 - 暂时禁用,准确率不高
+            # if include_industry:
+            #     chain_match = self._match_supply_chain(stock_name, stock_industry, full_text)
+            #     if chain_match:
+            #         matches.append({
+            #             **news,
+            #             'relevance_type': 'supply_chain',
+            #             'match_score': chain_match['score'],
+            #             'matched_terms': chain_match['terms'],
+            #             'confidence': chain_match['confidence'],
+            #             'match_reason': f"产业链: {chain_match['chain_type']}"
+            #         })
 
         # 按分数排序
         matches.sort(key=lambda x: x['match_score'], reverse=True)

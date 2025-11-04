@@ -4,13 +4,13 @@ from typing import Dict, Any, Optional
 
 # 不同数据类型的TTL配置（秒）- 完整覆盖所有数据类型
 CACHE_TTL_CONFIG: Dict[str, int] = {
-    # 实时数据 - 极短TTL (2-10分钟)
-    "stock_realtime": 2 * 60,       # 2分钟 - 个股实时数据
-    "market_overview": 5 * 60,      # 5分钟 - 市场概况
-    "index_realtime": 5 * 60,       # 5分钟 - 指数实时
-    
-    # 准实时数据 - 短TTL (10-30分钟)
-    "index_daily": 10 * 60,         # 10分钟 - 指数日线
+    # 实时数据 - 极短TTL (1-3分钟)
+    "stock_realtime": 1 * 60,       # 1分钟 - 个股实时数据
+    "market_overview": 2 * 60,      # 2分钟 - 市场概况
+    "index_realtime": 2 * 60,       # 2分钟 - 指数实时
+
+    # 准实时数据 - 短TTL (3-30分钟)
+    "index_daily": 3 * 60,          # 3分钟 - 指数日线(交易时段频繁更新)
     "moneyflow": 10 * 60,           # 10分钟 - 资金流向
     "stk_limit": 10 * 60,           # 10分钟 - 涨跌停数据
     "anns": 10 * 60,                # 10分钟 - 最新公告

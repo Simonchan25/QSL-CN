@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react'
+import API_BASE_URL from '../config/api'
 
 // 动态获取API地址
 const getApiUrl = (path) => {
-  // 如果是本地开发环境，使用localhost
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return `http://localhost:8001${path}`
-  }
-  // 否则使用当前访问的主机地址
-  return `http://${window.location.hostname}:8001${path}`
+  return `${API_BASE_URL}${path}`
 }
 
 export default function MarketOverview({ className = '' }) {
@@ -120,15 +116,15 @@ export default function MarketOverview({ className = '' }) {
       <div className="market-section">
         <h4 className="section-title">
           <span>
-            今日大盘
+            {market.data_update_time?.includes('最近交易日') ? '市场行情' : '今日大盘'}
             {market.data_date && (
               <span className="data-date-info">
                 {market.data_date.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')}
               </span>
             )}
-            {market.data_type && (
+            {market.data_update_time && (
               <span className={`data-type-badge ${market.is_realtime ? 'realtime' : 'historical'}`}>
-                {market.is_realtime ? '当日收盘' : market.data_type}
+                {market.data_update_time}
               </span>
             )}
           </span>
@@ -166,18 +162,34 @@ export default function MarketOverview({ className = '' }) {
         </div>
         
         {/* 数据说明 */}
-        {market.is_realtime && (
-          <div className="data-info-panel">
+        <div className="data-info-panel">
+          {market.data_update_time && (
             <div className="data-info-item">
-              <span className="info-icon">📈</span>
-              <span className="info-text">收盘价格 (15:00)</span>
+              <svg className="info-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M15,1H9V3H15M19,8H17V21H19M15,21H9A2,2 0 0,1 7,19V5A2,2 0 0,1 9,3A2,2 0 0,1 9,3V19H15V3A2,2 0 0,1 15,3M5,8H3V21H5M11,9H13V19H11V9Z"/>
+              </svg>
+              <span className="info-text">数据时效: {market.data_update_time}</span>
             </div>
-            <div className="data-info-item">  
-              <span className="info-icon">⏰</span>
-              <span className="info-text">更新时间: {new Date(market.timestamp).toLocaleTimeString('zh-CN')}</span>
-            </div>
+          )}
+          <div className="data-info-item">
+            <svg className="info-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22C6.47,22 2,17.5 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z"/>
+            </svg>
+            <span className="info-text">获取时间: {market.timestamp ? new Date(market.timestamp).toLocaleTimeString('zh-CN') : '未知'}</span>
           </div>
-        )}
+          {!market.is_realtime && market.data_update_time && (
+            <div className="data-info-item data-warning">
+              <svg className="info-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/>
+              </svg>
+              <span className="info-text">
+                {market.data_update_time.includes('天前')
+                  ? `显示最近交易日数据 (${market.data_update_time})`
+                  : '提示: Tushare日线数据在收盘后更新'}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 2. 市场情绪 */}
@@ -281,7 +293,12 @@ export default function MarketOverview({ className = '' }) {
       {/* 6. 操作建议（精简版） */}
       {enhancedAnalysis && enhancedAnalysis.summary && enhancedAnalysis.summary.operation_advice && (
         <div className="market-section advice-section">
-          <h4 className="section-title">💡 操作建议</h4>
+          <h4 className="section-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{marginRight: '4px', verticalAlign: 'middle'}}>
+              <path d="M12,2A7,7 0 0,1 19,9C19,11.38 17.81,13.47 16,14.74V17A1,1 0 0,1 15,18H9A1,1 0 0,1 8,17V14.74C6.19,13.47 5,11.38 5,9A7,7 0 0,1 12,2M9,21A1,1 0 0,0 8,22A1,1 0 0,0 9,23H15A1,1 0 0,0 16,22A1,1 0 0,0 15,21V20H9V21Z"/>
+            </svg>
+            操作建议
+          </h4>
           <div className="advice-list">
             {enhancedAnalysis.summary.operation_advice.slice(0, 2).map((advice, index) => (
               <div key={index} className="advice-item">{advice}</div>

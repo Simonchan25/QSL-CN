@@ -65,33 +65,68 @@ def search_hotspot_news(keyword: str, days_back: int = 3) -> Dict[str, Any]:
 
 
 def find_related_stocks(keyword: str, force: bool = False) -> List[Dict[str, Any]]:
-    """根据关键词查找相关股票"""
+    """根据关键词查找相关股票 - 优先使用ConceptManager"""
+    from .concept_manager import get_concept_manager
+
+    # 1. 优先使用ConceptManager查找概念股票
+    concept_mgr = get_concept_manager()
+    concept_stocks = concept_mgr.find_stocks_by_concept(keyword)
+
+    if concept_stocks:
+        # 获取股票基本信息
+        base = stock_basic(force=force)
+        if base is None or base.empty:
+            return []
+
+        related = []
+        for ts_code in concept_stocks:
+            stock_row = base[base['ts_code'] == ts_code]
+            if not stock_row.empty:
+                row = stock_row.iloc[0]
+                # 过滤掉退市或ST股票（通过名称判断）
+                name = str(row.get("name", ""))
+                if "退" in name or "ST" in name.upper():
+                    continue
+
+                related.append({
+                    "ts_code": row.get("ts_code"),
+                    "name": row.get("name"),
+                    "industry": row.get("industry"),
+                    "market": row.get("market"),
+                    "relevance_score": 10,  # 概念匹配给高分
+                })
+
+        print(f"[热点分析] 通过ConceptManager找到 {len(related)} 只相关股票")
+        return related[:50]  # 返回前50个
+
+    # 2. 如果ConceptManager没找到，回退到关键词匹配
+    print(f"[热点分析] ConceptManager未找到相关股票，使用关键词匹配...")
     base = stock_basic(force=force)
     if base is None or base.empty:
         return []
-    
+
     related = []
     keyword_lower = keyword.lower()
-    
+
     for _, row in base.iterrows():
         if row.get("list_status") != "L":  # 只考虑上市股票
             continue
-            
+
         score = 0
         name = str(row.get("name", "")).lower()
         fullname = str(row.get("fullname", "")).lower()
         industry = str(row.get("industry", "")).lower()
-        
+
         # 名称匹配
         if keyword_lower in name:
             score += 10
         elif keyword_lower in fullname:
             score += 5
-        
+
         # 行业匹配
         if keyword_lower in industry:
             score += 3
-        
+
         # 概念关联（简单关键词映射）
         concept_map = {
             "脑机": ["脑科学", "神经", "接口", "医疗器械", "人工智能"],
@@ -99,14 +134,14 @@ def find_related_stocks(keyword: str, force: bool = False) -> List[Dict[str, Any
             "新能源": ["锂电", "光伏", "风电", "储能", "充电桩"],
             "半导体": ["芯片", "集成电路", "晶圆", "封测", "设备"],
         }
-        
+
         for concept, keywords in concept_map.items():
             if keyword_lower in concept or concept in keyword_lower:
                 for kw in keywords:
                     if kw in name or kw in fullname or kw in industry:
                         score += 2
                         break
-        
+
         if score > 0:
             related.append({
                 "ts_code": row.get("ts_code"),
@@ -115,9 +150,10 @@ def find_related_stocks(keyword: str, force: bool = False) -> List[Dict[str, Any
                 "market": row.get("market"),
                 "relevance_score": score,
             })
-    
+
     # 按相关度排序
     related.sort(key=lambda x: x["relevance_score"], reverse=True)
+    print(f"[热点分析] 通过关键词匹配找到 {len(related[:30])} 只相关股票")
     return related[:30]  # 返回前30个最相关的
 
 
@@ -270,6 +306,7 @@ def analyze_hotspot(keyword: str, force: bool = False) -> Dict[str, Any]:
         "news_sentiment": sentiment,
         "stocks": analyzed_stocks[:10],  # 返回前10个
         "industry_distribution": industry_dist,
+        "total_related_count": len(related_stocks),  # 添加total_related_count字段
         "stock_count": len(related_stocks),
         "analyzed_count": len(analyzed_stocks),
     }

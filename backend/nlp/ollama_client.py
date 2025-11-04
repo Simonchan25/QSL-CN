@@ -3,9 +3,9 @@ import json
 import requests
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:32b")  # 使用已有的32b模型
-OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "32768"))  # 增加输出长度限制
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "1200"))  # 增加到1200秒(20分钟)，适应32b大模型
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "deepseek-r1:8b")  # 默认使用8b模型
+OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "8192"))  # 输出长度限制
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))  # 超时5分钟
 STRIP_THINK = os.getenv("OLLAMA_STRIP_THINK", "1") == "1"
 USE_LLM_FOR_MORNING = os.getenv("USE_LLM_FOR_MORNING", "1") == "1"
 
@@ -23,7 +23,11 @@ SYS_PROMPT_V2 = (
 "\n\n【数据域对照（示例）】"
 "\n- 基本面/估值：stock_basic, daily_basic, 估值数据(PE/PB/PS/市值/流通)"
 "\n- 报表/指标：income, balancesheet, cashflow, fina_indicator, 业绩快报/预告"
-"\n- 行情/技术：daily(OHLCV/额/涨跌幅/换手), stk_factor, bak_daily"
+"\n- 行情/技术：daily(OHLCV/额/涨跌幅/换手), stk_factor_pro(260+技术指标), bak_daily"
+"\n  • stk_factor_pro专业指标：RSI/MACD/KDJ/布林带/ATR波动率/DMI/CCI/BIAS/EXPMA/KTN肯特纳/TAQ海龟"
+"\n  • 市场估值：PE/PE_TTM/PB/PS/股息率/总市值/流通市值"
+"\n  • 特殊形态：连涨天数(updays)/连跌天数(downdays)/近期新高(topdays)/近期新低(lowdays)"
+"\n  • 成交分析：量比(volume_ratio)/换手率(turnover_rate)/MFI资金流/OBV能量潮/VR量比"
 "\n- 筹码/机构/外资(5000积分)：cyq_perf, cyq_chips, 支撑压力位, stk_surv, ccass_hold, moneyflow_hsgt"
 "\n- 板块轮动：ths_index, ths_daily, ths_member, 板块排行"
 "\n- 新闻/事件：TuShare.news, major_news, cctv_news, 第三方新闻"
@@ -55,9 +59,21 @@ SYS_PROMPT_V2 = (
 "\n3.2 DCF：WACC、永续增速、敏感性区间与对应目标价（明确参数与日期）【src】"
 "\n（若参数不足，给出《估值参数缺失与影响》段落，说明不确定度）"
 "\n\n═══════════════════════════════════════════════════════════"
-"\n四、【技术与趋势】"
-"\n4.1 趋势与形态：MA体系、12-1动量、52周位置、形态确认度【src】"
-"\n4.2 指标面板：RSI/MACD/KDJ/BOLL、ATR、量比（统一单位）【src】"
+"\n四、【技术与趋势】（充分利用stk_factor_pro专业指标）"
+"\n4.1 趋势与形态："
+"\n  • 均线系统：MA5/10/20/60位置关系、EMA指数均线、BBI多空指标【src: ma_qfq_*, ema_qfq_*, bbi_qfq】"
+"\n  • 形态识别：连涨/跌天数、近期高低点位置、52周相对位置【src: updays, downdays, topdays, lowdays】"
+"\n  • 支撑阻力：布林带(upper/mid/lower)、肯特纳通道、唐安奇通道【src: boll_*_qfq, ktn_*_qfq, taq_*_qfq】"
+"\n4.2 技术指标综合："
+"\n  • 动量类：RSI(6/12/24)、MACD(DIF/DEA/MACD柱)、ROC变动率、MTM动量【src: rsi_qfq_*, macd_*_qfq, roc_qfq, mtm_qfq】"
+"\n  • 超买超卖：KDJ(K/D/J)、CCI顺势、WR威廉、MFI资金流【src: kdj_*_qfq, cci_qfq, wr_qfq, mfi_qfq】"
+"\n  • 波动率：ATR真实波动、BIAS乖离率、DMI动向(PDI/MDI/ADX)【src: atr_qfq, bias*_qfq, dmi_*_qfq】"
+"\n  • 成交量：量比、换手率、OBV能量潮、VR成交量比率【src: volume_ratio, turnover_rate_f, obv_qfq, vr_qfq】"
+"\n  • 情绪指标：BRAR(AR/BR)、PSY心理线、MASS梅斯线【src: brar_*_qfq, psy_qfq, mass_qfq】"
+"\n4.3 综合技术评分与信号："
+"\n  • 根据多指标共振判断买卖信号强度"
+"\n  • 给出技术面综合评分(0-100)"
+"\n  • 明确当前技术面建议：强烈买入/买入/观望/卖出/强烈卖出"
 "\n\n═══════════════════════════════════════════════════════════"
 "\n五、【情绪与市场行为】（**必须详细**）"
 "\n5.1 新闻/市场情绪：多源加权情绪、关键词、边际变化【src: TuShare.news/第三方】"
@@ -96,6 +112,11 @@ SYS_PROMPT_V3 = (
 "\n4. 缺失处理：关键数据缺失时设《数据缺失风险》专章"
 "\n5. 投资建议：明确评级+目标价+风险提示"
 "\n\n【5000积分增强模块】"
+"\n• 专业技术指标：stk_factor_pro提供260+技术因子，包括："
+"\n  - 全部复权价格(前复权qfq/后复权hfq/不复权bfq)"
+"\n  - 完整技术指标族：RSI/MACD/KDJ/BOLL/DMI/CCI/BIAS/ATR等"
+"\n  - 特殊形态：连涨跌天数、近期新高新低、支撑阻力位"
+"\n  - 市场估值：PE_TTM/PB/PS_TTM/股息率/市值数据"
 "\n• 筹码分析：成本分布、获利盘比例、支撑压力位【cyq_perf, cyq_chips】"
 "\n• 机构跟踪：调研频次、参与机构类型、调研要点【stk_surv】"
 "\n• 港资动向：持股比例变化、资金流向趋势【ccass_hold】"

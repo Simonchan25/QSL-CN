@@ -358,84 +358,40 @@ def _get_capital_flow() -> Dict[str, Any]:
     try:
         # 获取最近的交易日期
         recent_dates = get_recent_trading_dates(10)
-        
-        # 1. 北向资金 - 尝试多种数据源获取
-        north_flow_found = False
-        
-        # 方案1：使用moneyflow_hsgt API
+
+        # 1. 北向资金 - 使用真实API数据
+        from .north_money_helper import get_north_money_flow
+
+        # 获取北向资金数据
         try:
-            if len(recent_dates) >= 7:
-                start_date = recent_dates[6]  # 7天前
-                end_date = recent_dates[0]    # 最新
-                hsgt_df = moneyflow_hsgt(start_date=start_date, end_date=end_date)
-                if hsgt_df is not None and not hsgt_df.empty:
-                    # 找到最新的有效数据行
-                    valid_data = None
-                    for i in range(len(hsgt_df) - 1, -1, -1):  # 倒序查找
-                        row = hsgt_df.iloc[i]
-                        north_money = row.get("north_money")
-                        if pd.notna(north_money) and north_money != 0:
-                            valid_data = row
-                            break
-                    
-                    if valid_data is not None:
-                        north_money = valid_data.get("north_money", 0)
-                        south_money = valid_data.get("south_money", 0)
-                        hgt = valid_data.get("hgt", 0)
-                        sgt = valid_data.get("sgt", 0)
-                        
-                        # 设置北向资金数据
-                        capital_flow["north_flow"] = {
-                            "north_money": float(north_money) if pd.notna(north_money) else 0,
-                            "south_money": float(south_money) if pd.notna(south_money) else 0,
-                            "hgt": float(hgt) if pd.notna(hgt) else 0,  # 沪股通
-                            "sgt": float(sgt) if pd.notna(sgt) else 0,  # 深股通
-                            "trade_date": valid_data.get("trade_date"),
-                            "data_source": "hsgt_real"
-                        }
-                        # 也设置为hsgt_net_amount供前端兼容使用
-                        capital_flow["hsgt_net_amount"] = float(north_money) if pd.notna(north_money) else 0
-                        north_flow_found = True
-                        print(f"[北向资金] 获取成功: {capital_flow['hsgt_net_amount']:.1f}亿")
+            north_data = get_north_money_flow(days=10)
+            if north_data.get("has_data"):
+                # 成功获取真实API数据
+                capital_flow["north_money"] = north_data.get("net_amount", 0)
+                capital_flow["hsgt_net_amount"] = north_data.get("net_amount", 0)  # 兼容性
+                capital_flow["hgt_amount"] = north_data.get("hgt_amount", 0)
+                capital_flow["sgt_amount"] = north_data.get("sgt_amount", 0)
+                capital_flow["north_trend"] = north_data.get("trend_signal", "")
+                capital_flow["north_accumulated"] = north_data.get("accumulated", 0)
+                capital_flow["data_source"] = north_data.get("data_source", "moneyflow_hsgt")
+
+                # 添加趋势数据（用于图表展示）
+                capital_flow["north_money_trend"] = {
+                    "latest_date": north_data.get("latest_date"),
+                    "trend_5d": north_data.get("trend_5d", []),
+                    "trend_10d": north_data.get("trend_10d", [])
+                }
+
+                print(f"[北向资金] 获取成功: {capital_flow['north_money']:.1f}亿")
+            else:
+                # API数据不可用，不使用降级数据
+                error_msg = north_data.get("error", "接口返回空数据")
+                print(f"[信息] 北向资金数据暂不可用: {error_msg}")
+                capital_flow["north_money"] = None
+                capital_flow["hsgt_net_amount"] = None
         except Exception as e:
-            print(f"[警告] moneyflow_hsgt API失败: {e}")
-        
-        # 方案2：如果主API失败，尝试使用基础数据估算（基于沪深港通个股数据）
-        if not north_flow_found:
-            try:
-                # 尝试通过个股港股通数据估算
-                total_hsgt_flow = 0
-                for date in recent_dates[:3]:  # 尝试最近3天
-                    try:
-                        hsgt_stocks = stock_hsgt(trade_date=date, type='HK_SZ')  # 深港通
-                        if hsgt_stocks is not None and not hsgt_stocks.empty and 'amount' in hsgt_stocks.columns:
-                            sz_flow = hsgt_stocks['amount'].sum() / 100000000  # 转换为亿元
-                            total_hsgt_flow += sz_flow
-                            break
-                    except:
-                        continue
-                
-                if total_hsgt_flow > 0:
-                    # 设置估算的北向资金数据
-                    capital_flow["north_flow"] = {
-                        "north_money": total_hsgt_flow,
-                        "south_money": 0,
-                        "hgt": 0,
-                        "sgt": total_hsgt_flow,
-                        "trade_date": recent_dates[0],
-                        "data_source": "estimated"
-                    }
-                    capital_flow["hsgt_net_amount"] = total_hsgt_flow
-                    north_flow_found = True
-                    print(f"[北向资金] 估算数据: {total_hsgt_flow:.1f}亿")
-            except Exception as e:
-                print(f"[警告] 北向资金估算失败: {e}")
-        
-        # 如果所有方案都失败，显式标记为无数据
-        if not north_flow_found:
-            print("[信息] 北向资金数据暂不可用")
-            # 设置显式的"无数据"状态，而不是完全不设置
-            capital_flow["north_flow"] = None
+            print(f"[警告] 北向资金获取失败: {e}")
+            capital_flow["north_money"] = None
             capital_flow["hsgt_net_amount"] = None
         
         # 2. 涨跌停统计 - 反映市场情绪
@@ -580,21 +536,58 @@ def _get_market_highlights() -> Dict[str, Any]:
     return highlights
 
 def fetch_market_overview() -> Dict[str, Any]:
+    """
+    获取市场概览数据
+    注意: Tushare日线数据通常在交易日收盘后更新(T+1),因此:
+    - 盘中: 显示上一个交易日数据
+    - 收盘后: 显示当日数据(次日凌晨后)
+    """
     end = _today_str()
-    start = (dt.date.today() - dt.timedelta(days=10)).strftime("%Y%m%d")
+    # 扩大查询范围,确保能获取到最近的交易日数据(考虑节假日)
+    start = (dt.date.today() - dt.timedelta(days=30)).strftime("%Y%m%d")
 
     indices: List[Dict[str, Any]] = []
     data_date = None  # 记录实际数据日期
-    
+    latest_update_time = None  # 最新数据时间
+
     for code in INDEX_CODES:
         df = _index_daily(code, start, end)
         row = None
         if df is not None and not df.empty:
-            df = df.sort_values("trade_date").reset_index(drop=True)
-            row = df.iloc[-1].to_dict()
+            df = df.sort_values("trade_date", ascending=False).reset_index(drop=True)
+            row = df.iloc[0].to_dict()  # 取最新一条
             if data_date is None:
                 data_date = row.get("trade_date")
-                
+                # 判断数据新鲜度
+                if data_date:
+                    try:
+                        trade_date_obj = dt.datetime.strptime(data_date, "%Y%m%d")
+                        today = dt.datetime.now()
+                        days_old = (today - trade_date_obj).days
+
+                        # 判断是否是周末或节假日
+                        is_weekend = today.weekday() >= 5  # 周六=5, 周日=6
+
+                        if days_old == 0:
+                            # 当天数据
+                            latest_update_time = "今日收盘" if today.hour >= 15 else "盘中数据"
+                        elif days_old == 1:
+                            # 昨天的数据
+                            if today.weekday() == 0:  # 周一
+                                latest_update_time = "上周五收盘"
+                            else:
+                                latest_update_time = "昨日收盘"
+                        elif days_old <= 3 and is_weekend:
+                            # 周末显示周五数据
+                            latest_update_time = f"上周五收盘 ({days_old}天前)"
+                        elif days_old >= 3:
+                            # 可能是节假日
+                            latest_update_time = f"最近交易日 ({days_old}天前)"
+                        else:
+                            latest_update_time = f"{days_old}天前"
+                    except:
+                        latest_update_time = "未知"
+
         close_v = (row or {}).get("close")
         pct_v = (row or {}).get("pct_chg")
         indices.append({
@@ -697,10 +690,11 @@ def fetch_market_overview() -> Dict[str, Any]:
     today_str = _today_str()
     is_realtime = data_date == today_str
     data_type = "实时数据" if is_realtime else "历史数据"
-    
+
     result = {
         "timestamp": dt.datetime.now().isoformat(),
         "data_date": data_date or _today_str(),  # 显示实际数据日期
+        "data_update_time": latest_update_time or "未知",  # 数据更新时间描述
         "data_type": data_type,
         "is_realtime": is_realtime,
         "indices": indices,

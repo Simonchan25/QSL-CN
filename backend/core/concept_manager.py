@@ -58,10 +58,14 @@ class ConceptManager:
                 ts_code = row['ts_code']  # 板块指数代码
                 concept_name = row['name']  # 概念名称
 
-                # 限制处理数量，避免API频率问题（先处理前100个热门概念）
-                if i >= 100:
-                    print(f"[概念库] 为避免API频率限制，暂时只处理前100个概念")
+                # 限制处理数量，避免API频率问题（处理前200个概念以覆盖更多热点）
+                if i >= 200:
+                    print(f"[概念库] 为避免API频率限制，暂时只处理前200个概念")
                     break
+
+                # 每20个概念暂停0.5秒，避免频率限制
+                if i > 0 and i % 20 == 0:
+                    time.sleep(0.5)
 
                 try:
                     # 使用ths_member获取该概念板块的成分股
@@ -119,15 +123,15 @@ class ConceptManager:
             print(f"[概念库] 保存缓存失败: {e}")
     
     def find_stocks_by_concept(self, concept_keyword: str) -> List[str]:
-        """根据概念关键词查找股票 - 改进版精确匹配"""
+        """根据概念关键词查找股票 - 改进版精确匹配 + 按需加载"""
         concept_map = self.get_all_concepts()
         matched_stocks = []
         keyword_lower = concept_keyword.lower()
 
         # 定义概念映射规则 - 更精确的映射
         concept_mappings = {
-            "脑机": ["脑科学", "脑机接口"],  # 更精确的脑机概念
-            "脑机接口": ["脑科学", "脑机接口"],
+            "脑机": ["脑机接口"],  # 精确映射
+            "脑机接口": ["脑机接口"],
             "新能源车": ["新能源汽车", "特斯拉", "充电桩", "锂电池"],
             "芯片": ["芯片概念", "集成电路", "半导体", "芯片设计"],
             "人工智能": ["人工智能", "AI", "机器学习", "AIGC"],
@@ -148,17 +152,61 @@ class ConceptManager:
                 matched_stocks.extend(stocks)
                 continue
 
-            # 避免错误匹配 - 排除不相关概念
-            if keyword_lower == "脑机" and "人脑工程" in concept_name_lower:
-                continue  # 跳过人脑工程，避免误匹配制药公司
-
-            # 普通包含匹配
-            if keyword_lower in concept_name_lower:
-                matched_stocks.extend(stocks)
+        # 3. 如果没有匹配到，尝试按需加载该具体概念
+        if not matched_stocks:
+            print(f"[概念库] 未在缓存中找到 {concept_keyword}，尝试按需加载...")
+            on_demand_stocks = self._load_concept_on_demand(target_concepts)
+            if on_demand_stocks:
+                matched_stocks.extend(on_demand_stocks)
 
         # 去重并返回
         return list(set(matched_stocks))
     
+    def _load_concept_on_demand(self, target_concept_names: List[str]) -> List[str]:
+        """按需加载特定概念的成分股"""
+        try:
+            # 获取所有同花顺概念
+            concepts_df = _call_api('ths_index', type='N', exchange='A')
+            if concepts_df.empty:
+                return []
+
+            matched_stocks = []
+
+            # 查找目标概念
+            for target_name in target_concept_names:
+                matching_concepts = concepts_df[concepts_df['name'].str.contains(target_name, case=False, na=False)]
+
+                for _, row in matching_concepts.iterrows():
+                    ts_code = row['ts_code']
+                    concept_name = row['name']
+
+                    try:
+                        # 获取该概念的成分股
+                        detail_df = _call_api('ths_member', ts_code=ts_code)
+                        if not detail_df.empty:
+                            stocks = detail_df['con_code'].tolist()
+                            matched_stocks.extend(stocks)
+                            print(f"[概念库] 按需加载 {concept_name}: {len(stocks)}只股票")
+
+                            # 更新到缓存
+                            if self._concept_map is None:
+                                self._concept_map = {}
+                            self._concept_map[concept_name] = stocks
+
+                    except Exception as e:
+                        print(f"[概念库] 按需加载 {concept_name} 失败: {e}")
+                        continue
+
+            # 保存更新后的缓存
+            if matched_stocks and self._concept_map:
+                self._save_cache(self._concept_map)
+
+            return matched_stocks
+
+        except Exception as e:
+            print(f"[概念库] 按需加载失败: {e}")
+            return []
+
     def get_stock_concepts(self, ts_code: str) -> List[str]:
         """获取股票所属的概念"""
         concept_map = self.get_all_concepts()

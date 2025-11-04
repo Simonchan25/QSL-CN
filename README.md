@@ -16,21 +16,25 @@ QSL-CN is an AI-powered analysis system for the Chinese A-share market, providin
 - **Real-time Market Monitoring**: Track major Shanghai and Shenzhen indices and sector dynamics in real-time
 - **Market Hotspot Analysis**: Intelligently identify hot sectors and concepts in the market
 - **Fund Flow Monitoring**: Real-time tracking of northbound funds and main capital flows
+- **Interactive Charts**: K-line charts and technical analysis visualizations
 
 ### 2. Intelligent Analysis
 - **Multi-dimensional Scoring System**: Comprehensive scoring based on technical, fundamental, and market sentiment dimensions
-- **AI-Driven Market Interpretation**: Deep market analysis using large language models
-- **Individual Stock Diagnosis**: Provide comprehensive analysis reports for individual stocks
+- **AI-Driven Market Interpretation**: Deep market analysis using large language models (Ollama)
+- **Kronos Stock Price Prediction**: Integrate Kronos time-series model for individual stock price forecasting with historical backtesting validation
+- **Individual Stock Diagnosis**: Provide comprehensive analysis reports for individual stocks with AI predictions
+- **Enhanced Hotspot Analyzer**: Intelligent sector rotation and hotspot tracking
 
 ### 3. Professional Reports
-- **Automated Report Generation**: Automatically generate daily market reports
-- **Customized Analysis Reports**: Generate specialized analysis reports based on user needs
+- **Automated Report Generation**: Automatically generate daily professional market reports
+- **RGTI-Style Deep Analysis**: Professional-grade analysis reports with quantitative metrics
 - **Historical Report Management**: Complete historical report archiving and query functionality
+- **Chart Generation**: Automated chart generation with technical indicators
 
 ### 4. Smart Interaction
 - **AI Assistant Dialogue**: Investment consultation through natural language with AI assistant
 - **Real-time Data Query**: Quickly obtain market data and analysis results
-- **Personalized Recommendations**: Intelligent recommendations based on user preferences
+- **Personalized Recommendations**: Intelligent stock recommendations based on market conditions
 
 ## 🛠 Technical Architecture
 
@@ -38,21 +42,41 @@ QSL-CN is an AI-powered analysis system for the Chinese A-share market, providin
 - **React 18.3**: Modern user interface framework
 - **Vite 5.4**: High-performance frontend build tool
 - **React Markdown**: Support for Markdown format report display
+- **ECharts**: Interactive data visualization
 
 ### Backend Technology Stack
-- **Python Flask**: Lightweight web framework
+- **Python 3.8+ Flask**: Lightweight web framework
 - **Tushare API**: Professional financial data interface
-- **Ollama**: Locally deployed large language model
-- **Caching Strategy**: Intelligent data caching mechanism
+- **Ollama**: Locally deployed large language model for AI analysis
+- **Kronos**: Time-series forecasting model based on Transformer architecture for stock price prediction
+- **Advanced Caching Strategy**: Intelligent multi-layer data caching mechanism
 
 ### Core Modules
+
+#### Backend Core (`backend/core/`)
 - `market.py`: Market data acquisition and processing
-- `analyze.py`: Comprehensive analysis engine
-- `professional_report_generator_v2.py`: Professional report generator
-- `market_ai_analyzer.py`: AI market analysis module
+- `analyze_optimized.py`: Optimized comprehensive analysis engine
+- `professional_report_generator_v2.py`: Professional report generator V2
+- `enhanced_hotspot_analyzer.py`: Enhanced hotspot analysis
+- `enhanced_smart_matcher.py`: Smart news-stock matching
 - `sentiment.py`: Market sentiment analysis
 - `technical.py`: Technical indicator calculation
 - `fundamentals.py`: Fundamental analysis
+- `stock_picker.py`: Intelligent stock selection
+- `chart_generator.py`: Automated chart generation
+- `kronos_predictor.py`: Kronos time-series prediction service with backtesting validation
+- `professional_report_enhancer.py`: AI-enhanced report generation with Kronos predictions
+- `north_money_helper.py`: Northbound funds analysis
+- `concept_manager.py`: Market concept management
+
+#### Frontend Components (`frontend/src/components/`)
+- `MarketOverview.jsx`: Market overview dashboard
+- `ReportRenderer.jsx`: Professional report renderer
+- `ReportHistory.jsx`: Historical reports management
+- `FloatingChat.jsx`: AI assistant chat interface
+- `InteractiveKLineChart.jsx`: Interactive K-line chart
+- `HotspotAnalysis.jsx`: Hotspot analysis display
+- `StockChart.jsx`: Stock chart visualization
 
 ## 🚀 Quick Start
 
@@ -77,42 +101,100 @@ pip install -r requirements.txt
 
 3. **Install frontend dependencies**
 ```bash
-cd ../frontend
+cd frontend
 npm install
 ```
 
-4. **Configure API keys**
-Configure your Tushare API token in `backend/core/tushare_client.py`
+4. **Configure environment variables**
+```bash
+# Copy the example environment file
+cp .env.example .env
 
-5. **Start backend service**
+# Edit .env and add your Tushare token
+# Get your token from https://tushare.pro/
+nano .env
+```
+
+5. **Install and start Ollama**
+```bash
+# Install Ollama from https://ollama.ai
+# Pull the required model
+ollama pull qwen2.5:7b
+```
+
+6. **Start backend service**
 ```bash
 cd backend
 python app.py
+# Backend runs on http://localhost:8001
 ```
 
-6. **Start frontend service**
+7. **Start frontend service**
 ```bash
 cd frontend
 npm run dev
+# Frontend runs on http://localhost:5173
 ```
 
-7. **Access the application**
+8. **Access the application**
 Open your browser and navigate to `http://localhost:5173`
+
+## 📁 Project Structure
+
+```
+QSL-CN/
+├── backend/
+│   ├── app.py                 # Main Flask application
+│   ├── core/                  # Core modules
+│   │   ├── market.py         # Market data
+│   │   ├── analyze_optimized.py
+│   │   ├── professional_report_generator_v2.py
+│   │   ├── enhanced_hotspot_analyzer.py
+│   │   ├── chart_generator.py
+│   │   └── ...
+│   ├── nlp/                   # NLP modules
+│   │   └── ollama_client.py  # Ollama integration
+│   └── data/                  # Data storage
+│       └── nickname_cache/   # Stock nickname cache
+├── frontend/
+│   ├── src/
+│   │   ├── components/       # React components
+│   │   ├── App.jsx          # Main application
+│   │   └── main.jsx         # Entry point
+│   ├── index.html
+│   └── package.json
+└── README.md
+```
 
 ## 📝 Usage Guide
 
 ### Market Overview
 Upon entering the homepage, you can view the real-time market overview, including:
-- Major index movements
-- Popular sector rankings
-- Fund flow analysis
+- Major index movements (SSE, SZSE, ChiNext)
+- Popular sector rankings with real-time changes
+- Fund flow analysis (northbound funds)
 - Market sentiment indicators
+- Interactive K-line charts
 
 ### Generate Reports
-1. Click the "Generate Report" button
+1. Click the "Generate Professional Report" button
 2. The system will automatically analyze current market data
-3. Generate professional reports containing market analysis and investment recommendations
-4. Support download and sharing features
+3. Generate comprehensive reports containing:
+   - Market overview and major index analysis
+   - Sector hotspot analysis
+   - Top stock recommendations with scoring
+   - Kronos AI price predictions with historical backtesting accuracy
+   - Technical analysis and trend forecasting
+   - Risk warnings and investment suggestions
+4. View historical reports in the report history section
+
+### Kronos AI Predictions
+The system integrates Kronos time-series model for stock price prediction:
+- **Historical Backtesting**: Validates model accuracy with past data
+- **Future Price Forecast**: Predicts next 5-10 trading days price movement
+- **Confidence Analysis**: Provides prediction confidence levels based on historical accuracy
+- **Smart Strategy**: Generates actionable trading strategies based on AI predictions
+- All predictions include detailed accuracy metrics and risk warnings
 
 ### AI Assistant
 1. Click the AI assistant icon in the bottom right corner
@@ -129,8 +211,9 @@ Upon entering the homepage, you can view the real-time market overview, includin
 ## 🔐 Security
 
 - All API keys are managed using environment variables
-- Locally deployed AI models ensure data privacy
-- Regular security updates and vulnerability fixes
+- Locally deployed AI models (Ollama) ensure data privacy
+- Multi-layer caching to reduce API calls and improve performance
+- No user data is stored or transmitted to external servers
 
 ## 🤝 Contributing
 
