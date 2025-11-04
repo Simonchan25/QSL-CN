@@ -62,7 +62,9 @@
       "Bash(open:*)",
       "Bash(gtimeout 10 curl -s http://localhost:8001/reports/professional/stream)",
       "Bash(/dev/null)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": [],

@@ -8,7 +8,7 @@
 
 ## 📊 Project Overview
 
-QSL-CN is an AI-powered analysis system for the Chinese A-share market, providing real-time market data analysis, intelligent investment recommendations, and professional market report generation. The system integrates multi-dimensional market analysis capabilities, including macroeconomic analysis, technical indicator analysis, and market sentiment monitoring, offering comprehensive decision support for investors.
+QSL-CN is a personal learning project for observing and analyzing the Chinese A-share market. It fetches real-time and historical market data from Tushare API, performs data cleaning and multi-dimensional factor scoring (technical + sentiment + fundamentals), and uses locally deployed LLM (Qwen2.5 via Ollama) for market interpretation. The system automatically generates daily morning reports including hotspots, recommendations, and charts, helping to understand market rotation patterns and sentiment rhythms.
 
 ## ✨ Core Features
 
@@ -26,8 +26,8 @@ QSL-CN is an AI-powered analysis system for the Chinese A-share market, providin
 - **Enhanced Hotspot Analyzer**: Intelligent sector rotation and hotspot tracking
 
 ### 3. Professional Reports
-- **Automated Report Generation**: Automatically generate daily professional market reports
-- **RGTI-Style Deep Analysis**: Professional-grade analysis reports with quantitative metrics
+- **Morning Report Generation**: Automatically generate daily morning reports with 7 sections (pre-market hotspots, announcements, global markets, board analysis, institutional activity, new highs, popularity rankings)
+- **Comprehensive Market Analysis**: Full A-share market coverage (5400+ stocks) with deep quantitative metrics
 - **Historical Report Management**: Complete historical report archiving and query functionality
 - **Chart Generation**: Automated chart generation with technical indicators
 
@@ -179,14 +179,16 @@ Upon entering the homepage, you can view the real-time market overview, includin
 ### Generate Reports
 1. Click the "Generate Professional Report" button
 2. The system will automatically analyze current market data
-3. Generate comprehensive reports containing:
-   - Market overview and major index analysis
-   - Sector hotspot analysis
-   - Top stock recommendations with scoring
-   - Kronos AI price predictions with historical backtesting accuracy
-   - Technical analysis and trend forecasting
-   - Risk warnings and investment suggestions
-4. View historical reports in the report history section
+3. Generate structured morning reports containing:
+   - Pre-market hotspots and key events
+   - Important announcements highlights
+   - Global market overview
+   - Board analysis (consecutive limit-ups, trading patterns)
+   - Institutional activity and smart money movements
+   - Stocks hitting new highs
+   - Popularity rankings and market sentiment
+4. Each report includes AI-generated professional summary and interactive charts
+5. View historical reports in the report history section
 
 ### Kronos AI Predictions
 The system integrates Kronos time-series model for stock price prediction:
