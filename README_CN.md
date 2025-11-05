@@ -45,11 +45,11 @@ QSL-CN 是一个用于观察和分析A股市场的个人学习项目。通过 Tu
 - **ECharts**：交互式数据可视化
 
 ### 后端技术栈
-- **Python 3.8+ Flask**：轻量级Web框架
-- **Tushare API**：专业的金融数据接口
-- **Ollama**：本地部署的大语言模型，用于AI分析
+- **Python 3.8+ FastAPI**：现代异步Web框架，自动生成API文档
+- **Tushare API**：专业的A股金融数据接口
+- **Ollama (Qwen2.5)**：本地部署的大语言模型，用于市场解读
 - **Kronos**：基于Transformer架构的时序预测模型，用于股价预测
-- **高级缓存策略**：智能多层数据缓存机制
+- **多层缓存**：内存缓存+文件缓存，优化API调用和性能
 
 ### 核心模块
 
@@ -144,25 +144,25 @@ npm run dev
 ```
 QSL-CN/
 ├── backend/
-│   ├── app.py                 # Flask主应用
+│   ├── app.py                 # FastAPI主应用
 │   ├── core/                  # 核心模块
-│   │   ├── market.py         # 市场数据
-│   │   ├── analyze_optimized.py
-│   │   ├── professional_report_generator_v2.py
-│   │   ├── enhanced_hotspot_analyzer.py
-│   │   ├── chart_generator.py
+│   │   ├── market.py         # 市场数据获取
+│   │   ├── analyze_optimized.py  # 分析引擎
+│   │   ├── professional_report_generator_v2.py  # 报告生成器
+│   │   ├── enhanced_hotspot_analyzer.py  # 热点分析
+│   │   ├── stock_picker.py   # 多因子选股
+│   │   ├── kronos_predictor.py  # 价格预测
 │   │   └── ...
 │   ├── nlp/                   # NLP模块
-│   │   └── ollama_client.py  # Ollama集成
-│   └── data/                  # 数据存储
-│       └── nickname_cache/   # 股票昵称缓存
+│   │   └── ollama_client.py  # Ollama大模型集成
+│   └── data/                  # 数据缓存
 ├── frontend/
 │   ├── src/
 │   │   ├── components/       # React组件
 │   │   ├── App.jsx          # 主应用
 │   │   └── main.jsx         # 入口文件
-│   ├── index.html
 │   └── package.json
+├── .env.example              # 环境变量模板
 └── README.md
 ```
 

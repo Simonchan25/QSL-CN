@@ -45,11 +45,11 @@ QSL-CN is a personal learning project for observing and analyzing the Chinese A-
 - **ECharts**: Interactive data visualization
 
 ### Backend Technology Stack
-- **Python 3.8+ Flask**: Lightweight web framework
-- **Tushare API**: Professional financial data interface
-- **Ollama**: Locally deployed large language model for AI analysis
+- **Python 3.8+ FastAPI**: Modern async web framework with automatic API documentation
+- **Tushare API**: Professional financial data interface for A-share market data
+- **Ollama (Qwen2.5)**: Locally deployed large language model for market interpretation
 - **Kronos**: Time-series forecasting model based on Transformer architecture for stock price prediction
-- **Advanced Caching Strategy**: Intelligent multi-layer data caching mechanism
+- **Multi-layer Caching**: Memory cache + file cache to optimize API calls and performance
 
 ### Core Modules
 
@@ -144,25 +144,25 @@ Open your browser and navigate to `http://localhost:5173`
 ```
 QSL-CN/
 ├── backend/
-│   ├── app.py                 # Main Flask application
+│   ├── app.py                 # Main FastAPI application
 │   ├── core/                  # Core modules
-│   │   ├── market.py         # Market data
-│   │   ├── analyze_optimized.py
-│   │   ├── professional_report_generator_v2.py
-│   │   ├── enhanced_hotspot_analyzer.py
-│   │   ├── chart_generator.py
+│   │   ├── market.py         # Market data acquisition
+│   │   ├── analyze_optimized.py  # Analysis engine
+│   │   ├── professional_report_generator_v2.py  # Report generator
+│   │   ├── enhanced_hotspot_analyzer.py  # Hotspot analysis
+│   │   ├── stock_picker.py   # Multi-factor stock selection
+│   │   ├── kronos_predictor.py  # Price prediction
 │   │   └── ...
 │   ├── nlp/                   # NLP modules
-│   │   └── ollama_client.py  # Ollama integration
-│   └── data/                  # Data storage
-│       └── nickname_cache/   # Stock nickname cache
+│   │   └── ollama_client.py  # Ollama LLM integration
+│   └── data/                  # Data cache
 ├── frontend/
 │   ├── src/
 │   │   ├── components/       # React components
 │   │   ├── App.jsx          # Main application
 │   │   └── main.jsx         # Entry point
-│   ├── index.html
 │   └── package.json
+├── .env.example              # Environment variables template
 └── README.md
 ```
 
