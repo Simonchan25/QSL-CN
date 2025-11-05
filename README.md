@@ -206,9 +206,12 @@ The system integrates Kronos time-series model for stock price prediction:
 
 ## 📊 Data Sources
 
-- **Tushare**: Provides real-time and historical data for the A-share market
-- **Sina Finance**: Supplementary market news and announcement information
-- **East Money**: Sector and concept data
+- **Tushare Pro API (5000 Credits)**:
+  - Real-time and historical market data (daily quotes, fundamentals, technical indicators)
+  - News aggregation from multiple sources (Sina, Wallstreetcn, 10jqka, Eastmoney, etc.)
+  - Institutional trading data, limit-up/down statistics
+  - Concept/sector data and northbound funds flow
+  - Announcements and major news
 
 ## 🔐 Security
 
