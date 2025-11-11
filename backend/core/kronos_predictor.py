@@ -13,19 +13,39 @@ import logging
 
 # 添加Kronos模块路径
 KRONOS_PATH = Path(__file__).parent.parent.parent / "Kronos-master"
-sys.path.insert(0, str(KRONOS_PATH))
 
-try:
-    from model import Kronos, KronosTokenizer, KronosPredictor
-except ImportError as e:
-    logging.error(f"Failed to import Kronos model: {e}")
+# 验证Kronos目录是否存在
+if not KRONOS_PATH.exists():
+    logging.warning(f"Kronos directory not found at {KRONOS_PATH}")
+    logging.warning("Kronos prediction features will be disabled")
     Kronos = None
     KronosTokenizer = None
     KronosPredictor = None
+else:
+    sys.path.insert(0, str(KRONOS_PATH))
+    try:
+        from model import Kronos, KronosTokenizer, KronosPredictor
+        logging.info(f"Kronos model loaded successfully from {KRONOS_PATH}")
+    except ImportError as e:
+        logging.error(f"Failed to import Kronos model: {e}")
+        logging.error("Kronos prediction features will be disabled")
+        Kronos = None
+        KronosTokenizer = None
+        KronosPredictor = None
 
 from .tushare_client import daily
 
 logger = logging.getLogger(__name__)
+
+
+def is_kronos_available() -> bool:
+    """
+    检查Kronos模型是否可用
+
+    Returns:
+        bool: Kronos模型是否可用
+    """
+    return all([Kronos is not None, KronosTokenizer is not None, KronosPredictor is not None])
 
 
 class KronosPredictorService:
@@ -44,9 +64,10 @@ class KronosPredictorService:
         self.predictor = None
         self._initialized = False
 
-        # 模型路径配置
-        self.tokenizer_path = str(KRONOS_PATH / "Kronos-Tokenizer-base")
-        self.model_path = str(KRONOS_PATH / "Kronos-base")
+        # 模型路径配置 - 使用HuggingFace Hub或本地路径
+        # 优先使用HuggingFace Hub上的预训练模型
+        self.tokenizer_path = "NeoQuasar/Kronos-Tokenizer-base"
+        self.model_path = "NeoQuasar/Kronos-base"
 
         logger.info(f"KronosPredictorService initialized with device: {device}")
 
@@ -55,8 +76,14 @@ class KronosPredictorService:
         if self._initialized:
             return
 
-        if Kronos is None or KronosTokenizer is None:
-            raise RuntimeError("Kronos模型未正确安装，请检查依赖")
+        if not is_kronos_available():
+            raise RuntimeError(
+                "Kronos模型未正确安装或Kronos-master目录不存在。\n"
+                "请确保:\n"
+                "1. Kronos-master目录存在于项目根目录\n"
+                "2. 已安装torch和transformers依赖\n"
+                "预测功能将不可用。"
+            )
 
         try:
             logger.info("Loading Kronos tokenizer...")

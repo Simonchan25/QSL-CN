@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional, Callable, Tuple, List
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 import time
 from datetime import datetime
+import json
+import os
 
 from .cache_manager import cache_manager, cache_stock_data
 from .chart_generator import (
@@ -16,11 +18,69 @@ from .chart_generator import (
 )
 
 
+def resolve_by_name(name_keyword: str, force: bool = False) -> Optional[dict]:
+    """通过股票名称解析股票信息（优先使用本地完整映射）"""
+
+    # 1) 加载本地完整映射表
+    mapping_path = os.path.join(os.path.dirname(__file__), 'symbol_map.json')
+    try:
+        with open(mapping_path, 'r', encoding='utf-8') as f:
+            stock_list = json.load(f)
+    except Exception as e:
+        print(f"[映射] 无法加载股票映射表: {e}")
+        return None
+
+    kw = str(name_keyword).strip()
+    candidates = []
+
+    # 2) 搜索逻辑：股票代码 > 别名 > 精确匹配 > 部分匹配
+    for stock in stock_list:
+        ts_code = stock.get('ts_code')
+        name = stock.get('name', '')
+        aliases = stock.get('aliases', [])
+
+        # 股票代码精确匹配（最高优先级）
+        if kw == ts_code or kw == ts_code.split('.')[0]:
+            candidates.append((stock, -1))
+        # 别名匹配
+        elif kw in aliases:
+            candidates.append((stock, 0))
+        # 精确名称匹配
+        elif kw == name:
+            candidates.append((stock, 1))
+        # 部分匹配
+        elif kw in name or name in kw:
+            name_diff = abs(len(name) - len(kw))
+            candidates.append((stock, 2 + name_diff))
+
+    if not candidates:
+        print(f"[映射] 未找到匹配的股票: {kw}")
+        return None
+
+    # 按优先级排序
+    candidates.sort(key=lambda x: x[1])
+    best_match = candidates[0][0]
+
+    # 转换为兼容格式
+    result = {
+        'ts_code': best_match.get('ts_code'),
+        'symbol': best_match.get('ts_code', '').split('.')[0],
+        'name': best_match.get('name'),
+        'industry': best_match.get('industry'),
+        'area': best_match.get('area'),
+        'market': '主板',  # 默认值
+        'list_status': 'L'
+    }
+
+    print(f"[映射] 找到股票: {result['name']} ({result['ts_code']})")
+    return result
+
+
 def run_pipeline_optimized(
     name_keyword: str,
     force: bool = False,
     progress: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None,
-    timeout_seconds: int = 30
+    timeout_seconds: int = 180
 ) -> Dict[str, Any]:
     """
     优化版分析流程 - 带超时保护和并发执行
@@ -44,7 +104,6 @@ def run_pipeline_optimized(
     _progress("开始分析")
 
     # 1. 解析股票代码（快速）
-    from .analyze import resolve_by_name
     stock_info = resolve_by_name(name_keyword, force)
     if not stock_info:
         return {"error": f"未找到股票: {name_keyword}"}
@@ -93,7 +152,9 @@ def run_pipeline_optimized(
         for future in as_completed(futures, timeout=remaining_time):
             task_name = futures[future]
             try:
-                task_result = future.result(timeout=3)
+                # 新闻匹配需要更长时间，给予30秒超时，其他任务10秒
+                task_timeout = 30 if task_name == 'news' else 10
+                task_result = future.result(timeout=task_timeout)
                 result[task_name] = task_result or {}
                 _progress(f"完成: {task_name}")
             except TimeoutError:
@@ -168,13 +229,13 @@ def run_pipeline_optimized(
 
 @cache_stock_data(ttl=60)  # 缩短到1分钟缓存，提高实时性
 def _fetch_technical_data(ts_code: str, stock_name: str) -> Dict[str, Any]:
-    """获取技术数据（带缓存）- 优先使用专业版"""
+    """获取技术数据（带缓存）- 禁用stk_factor_pro，使用普通版"""
     try:
-        # 优先尝试使用专业版技术指标
+        # 禁用专业版stk_factor_pro（API会卡住），直接使用普通版
         from .enhanced_technical_analysis import fetch_enhanced_technical_data
 
-        print(f"[技术数据] 尝试使用专业版技术指标分析 {stock_name}({ts_code})")
-        pro_result = fetch_enhanced_technical_data(ts_code, stock_name, use_pro=True)
+        print(f"[技术数据] 使用普通版技术指标分析 {stock_name}({ts_code})")
+        pro_result = fetch_enhanced_technical_data(ts_code, stock_name, use_pro=False)
 
         if pro_result and pro_result.get('status') == 'success' and pro_result.get('use_pro'):
             print(f"[技术数据] 成功使用专业版分析")

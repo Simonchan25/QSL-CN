@@ -80,12 +80,36 @@ QSL-CN is a personal learning project for observing and analyzing the Chinese A-
 
 ## 🚀 Quick Start
 
+### ⚡ One-Click Start (Recommended)
+
+```bash
+./start.sh
+```
+
+This will automatically:
+- Check Python environment
+- Create virtual environment (if not exists)
+- Install all dependencies
+- Verify configuration
+- Start backend service
+
+Visit:
+- API Health: http://localhost:8001/health
+- API Docs: http://localhost:8001/docs
+- Frontend: https://gp.simon-dd.life
+
+### 🛑 Stop Service
+
+```bash
+./stop.sh
+```
+
 ### Requirements
 - Python 3.8+
-- Node.js 16+
-- Ollama (for local AI model)
+- Ollama (optional, for AI features)
+- Tushare API Token (get from https://tushare.pro/)
 
-### Installation Steps
+### Manual Installation
 
 1. **Clone the repository**
 ```bash
@@ -93,10 +117,17 @@ git clone https://github.com/Simonchan25/QSL-CN.git
 cd QSL-CN
 ```
 
-2. **Install backend dependencies**
+2. **Configure environment**
 ```bash
-cd backend
-pip install -r requirements.txt
+cp .env.example .env
+# Edit .env and set TUSHARE_TOKEN
+```
+
+3. **Install backend dependencies**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r backend/requirements.txt
 ```
 
 3. **Install frontend dependencies**
@@ -219,6 +250,30 @@ The system integrates Kronos time-series model for stock price prediction:
 - Locally deployed AI models (Ollama) ensure data privacy
 - Multi-layer caching to reduce API calls and improve performance
 - No user data is stored or transmitted to external servers
+
+## 📚 Documentation
+
+- **[Deployment Guide](DEPLOYMENT.md)**: Detailed deployment instructions
+- **[Kronos Setup](KRONOS_SETUP.md)**: K-line prediction model setup
+- **[API Documentation](http://localhost:8001/docs)**: Interactive API docs
+
+## 🔒 Security & Configuration
+
+### Security Best Practices
+- Never commit `.env` file (contains sensitive tokens)
+- Properly configured CORS for production domain
+- Automatic rate limiting to prevent API abuse
+- Rotating log files for maintenance
+
+### Key Configurations (via `.env`)
+```bash
+TUSHARE_TOKEN=your_token        # Required: Get from tushare.pro
+FRONTEND_URL=https://gp.simon-dd.life  # Your frontend domain
+OLLAMA_MODEL=deepseek-r1:8b     # AI model selection
+LOG_LEVEL=INFO                  # Logging verbosity
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for production deployment guide.
 
 ## 🤝 Contributing
 

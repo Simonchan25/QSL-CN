@@ -47,12 +47,23 @@ def fetch_enhanced_technical_data(ts_code: str,
             # 使用专业版接口
             print(f"[技术分析] 使用stk_factor_pro获取{stock_name}技术指标")
 
-            # 获取专业技术因子数据
-            factor_df = StkFactorProClient.get_stk_factor_pro(
-                ts_code=ts_code,
-                start_date=start_date,
-                end_date=end_date
-            )
+            # 获取专业技术因子数据，带30秒超时
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        StkFactorProClient.get_stk_factor_pro,
+                        ts_code=ts_code,
+                        start_date=start_date,
+                        end_date=end_date
+                    )
+                    factor_df = future.result(timeout=30)  # 30秒超时
+            except FutureTimeoutError:
+                print(f"[技术分析] stk_factor_pro调用超时(30秒)，降级到普通版")
+                factor_df = None
+            except Exception as e:
+                print(f"[技术分析] stk_factor_pro调用失败: {e}，降级到普通版")
+                factor_df = None
 
             if factor_df is not None and not factor_df.empty:
                 # 分析技术因子

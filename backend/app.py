@@ -21,7 +21,12 @@ import pandas as pd
 # 先加载 .env，避免下游模块在导入时读取不到环境变量
 load_dotenv()
 
-from core.analyze import run_pipeline, resolve_by_name
+# 导入配置和工具模块
+from core.config import settings
+from core.rate_limiter import get_tushare_limiter
+from core.utils import setup_logger, clean_nan_values
+
+from core.analyze_optimized import resolve_by_name
 from core.market import fetch_market_overview
 from core.hotspot import analyze_hotspot
 from core.market_ai_analyzer import get_enhanced_market_ai_analyzer
@@ -115,42 +120,48 @@ async def global_exception_handler(request, exc: Exception):
             "timestamp": dt.datetime.now().isoformat()
         }
     )
+# CORS配置 - 从环境变量读取允许的域名
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+# 支持多个前端域名（开发环境和生产环境）
+allowed_origins = [
+    "http://localhost:5173",  # 开发环境
+    "http://localhost:2345",  # 开发环境（当前使用）
+    "https://gp.simon-dd.life",  # 生产环境
+]
+# 如果环境变量中指定了其他域名，也添加进来
+if FRONTEND_URL not in allowed_origins:
+    allowed_origins.append(FRONTEND_URL)
+
 app.add_middleware(
     CORSMiddleware,
-    # 允许所有源(包括file://协议用于本地测试)
-    allow_origins=["*"],
-    allow_credentials=False,  # 使用通配符时必须设为False
+    allow_origins=allowed_origins,
+    allow_credentials=True,  # 允许携带凭证
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    max_age=3600,  # 预检请求缓存时间
 )
 
-# 日志到文件 + 控制台
-_LOG_PATH = Path(__file__).with_name("server.log")
-logger = logging.getLogger("qsl")
-if not logger.handlers:
-    logger.setLevel(logging.INFO)
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    sh = logging.StreamHandler()
-    sh.setFormatter(fmt)
-    fh = logging.FileHandler(_LOG_PATH, encoding="utf-8")
-    fh.setFormatter(fmt)
-    logger.addHandler(sh)
-    logger.addHandler(fh)
+# 配置日志系统（使用工具模块）
+logger = setup_logger(
+    name="qsl",
+    log_file=str(settings.BASE_DIR / settings.LOG_FILE),
+    level=settings.LOG_LEVEL,
+    max_bytes=settings.LOG_MAX_BYTES,
+    backup_count=settings.LOG_BACKUP_COUNT
+)
 
+# 验证配置
+if not settings.validate():
+    logger.error("Configuration validation failed!")
+    logger.error("Please check your .env file")
 
-# 简化版本 - 不需要任务调度器
+# 初始化限流器
+tushare_limiter = get_tushare_limiter()
+logger.info("Rate limiter initialized")
 
-def clean_nan_values(obj):
-    """递归清理对象中的 NaN、Inf 等无效浮点数，替换为 None"""
-    if isinstance(obj, dict):
-        return {k: clean_nan_values(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [clean_nan_values(item) for item in obj]
-    elif isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            return None
-        return obj
-    return obj
+# 打印配置摘要
+config_summary = settings.get_summary()
+logger.info(f"Server configuration: {json.dumps(config_summary, indent=2)}")
 
 
 class AnalyzeRequest(BaseModel):
@@ -221,13 +232,18 @@ def _sse_log(event: str, data: str) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-@app.get("/health", 
+@app.get("/health",
     summary="基础健康检查",
     description="检查API服务是否正常运行",
     response_description="服务状态信息",
     tags=["系统监控"])
 def health():
-    return {"ok": True, "timestamp": dt.datetime.now().isoformat()}
+    limiter_stats = tushare_limiter.get_stats()
+    return {
+        "ok": True,
+        "timestamp": dt.datetime.now().isoformat(),
+        "rate_limit": limiter_stats
+    }
 
 @app.get("/health/detailed",
     summary="详细健康检查",
@@ -488,8 +504,11 @@ def analyze_stream(name: str, force: bool = False):
     def _worker():
         try:
             # 执行分析流程 - 使用优化版分析模块，包含RGTI深度分析
-            from core.analyze import run_pipeline
+            print(f"[WORKER] 开始导入分析模块", flush=True)
+            from core.analyze_optimized import run_pipeline_optimized as run_pipeline
+            print(f"[WORKER] 开始执行分析: {name}, force={force}", flush=True)
             result = run_pipeline(name, force=force, progress=_progress)
+            print(f"[WORKER] 分析完成，结果类型: {type(result)}", flush=True)
 
             # 检测旧版缓存（没有score或summary字段），强制重新分析
             if isinstance(result, dict) and (not result.get('score') or not result.get('summary')) and not force:
@@ -687,7 +706,7 @@ def analyze_professional(name: str, force: bool = True):
     
     try:
         # 使用优化版分析模块，包含RGTI风格深度分析
-        from core.analyze import run_pipeline
+        from core.analyze_optimized import run_pipeline_optimized as run_pipeline
 
         # 获取完整分析数据（使用优化版本，自动包含深度分析）
         result = run_pipeline(name, force=force)
@@ -1719,7 +1738,7 @@ def analyze_quick(name: str, force: bool = False):
         raise HTTPException(400, detail="name 不能为空")
 
     try:
-        from core.analyze import resolve_by_name
+        from core.analyze_optimized import resolve_by_name
         from core.tushare_client import daily
         from datetime import datetime, timedelta
 

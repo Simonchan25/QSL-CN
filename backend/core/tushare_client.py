@@ -13,6 +13,10 @@ import json
 from pathlib import Path
 import hashlib
 import functools
+import socket
+
+# 设置全局socket超时时间为15秒，防止HTTP请求无限挂起
+socket.setdefaulttimeout(15)
 
 # 导入缓存配置
 try:
@@ -35,7 +39,7 @@ token = os.getenv("TUSHARE_TOKEN")
 if not token:
     raise ValueError("TUSHARE_TOKEN environment variable is required. Please set it in .env file")
 ts.set_token(token)
-pro = ts.pro_api()
+pro = ts.pro_api(timeout=15)  # 设置15秒超时，防止API调用挂起
 
 TUSHARE_PRO_API_URL = os.getenv('TUSHARE_PRO_API_URL', 'https://api.waditu.com/dataapi')
 
@@ -211,19 +215,33 @@ def save_cache(key: str, df: pd.DataFrame):
 
 def _call_api(api_name: str, **kwargs) -> Optional[pd.DataFrame]:
     """
-    调用Tushare API的通用方法
-    
+    调用Tushare API的通用方法，带20秒超时
+
     Args:
         api_name: API接口名称
         **kwargs: API参数
-        
+
     Returns:
         DataFrame或None
     """
-    try:
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+    def _do_query():
         _rate_limit()
-        df = pro.query(api_name, **kwargs)
-        return df if df is not None and not df.empty else pd.DataFrame()
+        return pro.query(api_name, **kwargs)
+
+    try:
+        # 使用线程池执行查询，带20秒超时
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_do_query)
+            try:
+                df = future.result(timeout=20)  # 20秒超时
+                return df if df is not None and not df.empty else pd.DataFrame()
+            except FutureTimeoutError:
+                print(f"[超时] API调用超时: {api_name}, 参数: {kwargs}")
+                raise APIError(f"API调用超时(20秒): {api_name}")
+    except FutureTimeoutError:
+        raise APIError(f"API调用超时(20秒): {api_name}")
     except Exception as e:
         error_msg = str(e)
         if "每天最多访问" in error_msg or "每分钟最多访问" in error_msg:

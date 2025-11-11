@@ -28,8 +28,7 @@ try:
 except ImportError:
     JIEBA_AVAILABLE = False
 from .concept_manager import get_concept_manager
-from .analyze_optimized import run_pipeline_optimized as run_pipeline
-from .analyze import resolve_by_name
+from .analyze_optimized import run_pipeline_optimized as run_pipeline, resolve_by_name
 from .market import fetch_market_overview, _get_market_highlights
 from .stock_picker import get_top_picks
 from .trading_plan import build_trading_plans_for_picks

@@ -6,7 +6,7 @@ import InteractiveKLineChart from './components/InteractiveKLineChart'
 import ReportRenderer from './components/ReportRenderer'
 import ReportChart from './components/ReportCharts'
 import DataTable from './components/DataTable'
-import './App.css'
+// import './App.css'  // 已在main.jsx导入
 import FloatingChat from './components/FloatingChat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -762,7 +762,7 @@ export default function App() {
                       value={name} 
                       onChange={e=>setName(e.target.value)} 
                       placeholder="股票名称/代码" 
-                      onKeyDown={(e) => e.key === 'Enter' && !loading && analyze()}
+                      onKeyDown={(e) => e.key === 'Enter' && !proLoading && analyze()}
                     />
                     <div className="search-options">
                       <label className="checkbox-label" htmlFor="force-refresh-stock">
@@ -822,7 +822,7 @@ export default function App() {
                       value={name} 
                       onChange={e=>setName(e.target.value)} 
                       placeholder="输入股票名称或代码" 
-                      onKeyDown={(e) => e.key === 'Enter' && !loading && analyze()}
+                      onKeyDown={(e) => e.key === 'Enter' && !proLoading && analyze()}
                     />
                     <button className="search-button" onClick={analyze} disabled={proLoading}>
                       {proLoading ? <><span className="spinner"></span> 分析中...</> : '开始分析'}

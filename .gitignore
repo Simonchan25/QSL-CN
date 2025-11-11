@@ -140,4 +140,5 @@ temp/
 *.code-workspace
 
 # Local History for Visual Studio Code
-.history/
+.history/Kronos-master/
+Kronos-master/Kronos-base/model.safetensors

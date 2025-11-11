@@ -1,12 +1,41 @@
+# Web Framework
 fastapi==0.111.0
 uvicorn==0.30.0
 python-dotenv==1.0.1
-pydantic==2.7.1
+pydantic>=2.7.1
+
+# Data Processing
 pandas==2.2.2
 numpy==1.26.4
+
+# HTTP Client
 requests==2.32.3
+httpx==0.27.0
+
+# Caching
 cachetools==5.3.3
+
+# HTML/XML Parsing
 lxml==5.2.2
+
+# Financial Data
 tushare==1.2.89
+
+# Task Scheduling
 APScheduler==3.10.4
 pytz==2025.2
+
+# Deep Learning (for Kronos K-line Prediction)
+torch>=2.0.0
+transformers>=4.30.0
+einops>=0.8.0
+accelerate>=1.0.0
+
+# NLP & Text Processing
+jieba==0.42.1
+
+# Rate Limiting
+slowapi==0.1.9
+
+# Logging
+colorlog==6.8.2
